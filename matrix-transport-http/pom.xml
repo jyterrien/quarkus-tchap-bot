@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>fr.gouv.tchap</groupId>
+        <artifactId>quarkus-tchap-bot-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>matrix-transport-http</artifactId>
+    <name>Matrix Transport HTTP</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>fr.gouv.tchap</groupId>
+            <artifactId>matrix-client-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>fr.gouv.tchap</groupId>
+            <artifactId>matrix-client-core</artifactId>
+        </dependency>
+
+        <!-- Vert.x WebClient -->
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-web-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

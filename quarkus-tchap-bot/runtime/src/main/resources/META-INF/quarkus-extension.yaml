@@ -1,0 +1,13 @@
+---
+name: "Tchap Bot"
+description: "Extension Quarkus pour développer des bots Tchap/Matrix"
+metadata:
+  keywords:
+    - "tchap"
+    - "matrix"
+    - "bot"
+    - "chat"
+  guide: "https://github.com/fr-gouv/tchap-bot"
+  categories:
+    - "messaging"
+  status: "experimental"
