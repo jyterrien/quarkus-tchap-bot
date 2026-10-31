@@ -19,7 +19,6 @@ import java.util.concurrent.CompletionStage;
  */
 public class VertxHttpTransport implements HttpTransport {
 
-    private final Vertx vertx;
     private final WebClient client;
     private final String homeserverUrl;
 
@@ -28,7 +27,6 @@ public class VertxHttpTransport implements HttpTransport {
     }
 
     public VertxHttpTransport(Vertx vertx, String homeserverUrl) {
-        this.vertx = vertx;
         this.client = WebClient.create(vertx, new WebClientOptions()
             .setConnectTimeout(30_000)
             .setKeepAlive(true));
