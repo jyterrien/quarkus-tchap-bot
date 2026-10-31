@@ -8,7 +8,6 @@ import fr.gouv.tchap.matrix.core.sync.InMemorySyncTokenStore;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
-import fr.gouv.tchap.matrix.transport.http.MatrixHttpTransportAdapter;
 import fr.gouv.tchap.matrix.transport.http.VertxHttpTransport;
 import fr.gouv.tchap.quarkus.config.TchapConfig;
 import fr.gouv.tchap.quarkus.events.TchapEventPublisher;
@@ -53,7 +52,7 @@ public class TchapClientProducer {
         Consumer<MatrixEvent> consumer = ev -> publish(publisher, ev, config.bot().ignoreSelfMessages(), userId);
 
         return new DefaultMatrixClient(
-            new MatrixHttpTransportAdapter(httpTransport),
+            httpTransport,
             token,
             userId,
             tokenStore,

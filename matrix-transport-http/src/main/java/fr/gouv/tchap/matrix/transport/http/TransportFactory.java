@@ -1,26 +1,25 @@
 package fr.gouv.tchap.matrix.transport.http;
 
-import fr.gouv.tchap.matrix.core.transport.MatrixTransport;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
+import io.vertx.core.Vertx;
 
 /**
  * Fabrique utilitaire pour l'assemblage côté application.
- * L'extension Quarkus (module runtime) peut également faire ce câblage
- * directement via CDI ; cette fabrique reste utile hors Quarkus.
+ * L'extension Quarkus peut faire ce câblage directement via CDI
+ * en injectant le Vertx géré par le runtime ; cette fabrique reste
+ * utile hors Quarkus.
  */
 public final class TransportFactory {
 
     private TransportFactory() {}
 
-    public static HttpTransport jdk(String homeserverUrl) {
-        return new JdkHttpTransport(homeserverUrl);
+    /** Crée un transport avec sa propre instance Vertx. */
+    public static HttpTransport vertx(String homeserverUrl) {
+        return new VertxHttpTransport(homeserverUrl);
     }
 
-    public static MatrixTransport matrixJdk(String homeserverUrl) {
-        return new MatrixHttpTransportAdapter(jdk(homeserverUrl));
-    }
-
-    public static MatrixTransport matrix(HttpTransport transport) {
-        return new MatrixHttpTransportAdapter(transport);
+    /** Crée un transport sur une instance Vertx existante (ex. celle de Quarkus). */
+    public static HttpTransport vertx(Vertx vertx, String homeserverUrl) {
+        return new VertxHttpTransport(vertx, homeserverUrl);
     }
 }

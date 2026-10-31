@@ -11,9 +11,9 @@
     <description>Extension Quarkus pour le développement de bots Tchap/Matrix</description>
 
     <properties>
-        <maven.install.skip>true</maven.install.skip>
+<!--         <maven.install.skip>true</maven.install.skip>
         <maven.deploy.skip>true</maven.deploy.skip>
-
+ -->
         <argLine></argLine>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -27,6 +27,7 @@
     </properties>
 
     <modules>
+        <module>matrix-transport-api</module>
         <module>matrix-client-api</module>
         <module>matrix-client-core</module>
         <module>matrix-transport-http</module>
@@ -51,6 +52,11 @@
             <dependency>
                 <groupId>fr.gouv.tchap</groupId>
                 <artifactId>matrix-client-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>fr.gouv.tchap</groupId>
+                <artifactId>matrix-transport-api</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

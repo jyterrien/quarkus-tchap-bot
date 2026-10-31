@@ -9,11 +9,11 @@ import fr.gouv.tchap.matrix.core.message.UuidTransactionIdGenerator;
 import fr.gouv.tchap.matrix.core.room.DefaultRoomService;
 import fr.gouv.tchap.matrix.core.sync.SyncEngine;
 import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
-import fr.gouv.tchap.matrix.core.transport.MatrixTransport;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
 import fr.gouv.tchap.matrix.message.MessageService;
 import fr.gouv.tchap.matrix.room.RoomService;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
+import fr.gouv.tchap.matrix.transport.HttpTransport;
 
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicReference;
@@ -27,7 +27,7 @@ public class DefaultMatrixClient implements MatrixClient {
     private final SyncEngine syncEngine;
     private final AtomicReference<ClientStatus> status = new AtomicReference<>(ClientStatus.NEW);
 
-    public DefaultMatrixClient(MatrixTransport transport,
+    public DefaultMatrixClient(HttpTransport transport,
                                String accessToken,
                                String userId,
                                SyncTokenStore tokenStore,

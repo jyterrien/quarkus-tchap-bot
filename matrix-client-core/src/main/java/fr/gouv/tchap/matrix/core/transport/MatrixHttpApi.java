@@ -1,21 +1,23 @@
 package fr.gouv.tchap.matrix.core.transport;
 
+import fr.gouv.tchap.matrix.transport.HttpTransport;
+
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletionStage;
 
 /**
- * Adaptateur Matrix au-dessus du port MatrixTransport.
+ * Adaptateur Matrix au-dessus de HttpTransport.
  * API : sync(), sendMessage(), joinRoom(), leaveRoom().
  */
 public class MatrixHttpApi {
 
     private static final String API_PREFIX = "/_matrix/client/v3";
 
-    private final MatrixTransport transport;
+    private final HttpTransport transport;
     private final String accessToken;
 
-    public MatrixHttpApi(MatrixTransport transport, String accessToken) {
+    public MatrixHttpApi(HttpTransport transport, String accessToken) {
         this.transport = transport;
         this.accessToken = accessToken;
     }

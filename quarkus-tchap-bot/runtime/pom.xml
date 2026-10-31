@@ -17,6 +17,10 @@
         <!-- Core & transport -->
         <dependency>
             <groupId>fr.gouv.tchap</groupId>
+            <artifactId>matrix-transport-api</artifactId>   <!-- HttpTransport + exceptions -->
+        </dependency>
+        <dependency>
+            <groupId>fr.gouv.tchap</groupId>
             <artifactId>matrix-client-api</artifactId>
         </dependency>
         <dependency>

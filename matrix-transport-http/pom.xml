@@ -20,7 +20,7 @@
         </dependency>
         <dependency>
             <groupId>fr.gouv.tchap</groupId>
-            <artifactId>matrix-client-core</artifactId>
+            <artifactId>matrix-transport-api</artifactId>
         </dependency>
 
         <!-- Vert.x WebClient -->

@@ -19,6 +19,10 @@
             <artifactId>matrix-client-api</artifactId>
         </dependency>
         <dependency>
+            <groupId>fr.gouv.tchap</groupId>
+            <artifactId>matrix-transport-api</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>

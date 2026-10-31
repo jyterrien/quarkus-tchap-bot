@@ -11,6 +11,10 @@
 
     <artifactId>tchap-bot-integration-tests</artifactId>
     <name>Quarkus Tchap Bot - Functional Matrix Tests</name>
+    <properties>
+        <maven.install.skip>true</maven.install.skip>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
 
     <dependencies>
         <dependency>
