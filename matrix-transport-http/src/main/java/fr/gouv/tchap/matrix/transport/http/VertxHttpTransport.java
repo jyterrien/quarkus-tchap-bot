@@ -3,6 +3,7 @@ package fr.gouv.tchap.matrix.transport.http;
 import fr.gouv.tchap.matrix.exception.MatrixException;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
+import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.ext.web.client.HttpRequest;
@@ -15,7 +16,7 @@ import java.util.concurrent.CompletionStage;
 
 /**
  * Implémentation HttpTransport basée sur Vert.x WebClient.
- * Recommandée en environnement Quarkus : le Vertx est déjà géré par le runtime.
+ * Accepte un Vertx existant (Quarkus) ou en crée un en interne.
  */
 public class VertxHttpTransport implements HttpTransport {
 
@@ -27,6 +28,9 @@ public class VertxHttpTransport implements HttpTransport {
     }
 
     public VertxHttpTransport(Vertx vertx, String homeserverUrl) {
+        if (homeserverUrl == null || homeserverUrl.isBlank()) {
+            throw new IllegalArgumentException("homeserverUrl is required");
+        }
         this.client = WebClient.create(vertx, new WebClientOptions()
             .setConnectTimeout(30_000)
             .setKeepAlive(true));
@@ -39,7 +43,7 @@ public class VertxHttpTransport implements HttpTransport {
     public CompletionStage<String> get(String path, String accessToken) {
         HttpRequest<Buffer> req = client.getAbs(homeserverUrl + path)
             .putHeader("Authorization", "Bearer " + accessToken);
-        return send(req);
+        return handle(req.send());
     }
 
     @Override
@@ -47,14 +51,22 @@ public class VertxHttpTransport implements HttpTransport {
         HttpRequest<Buffer> req = client.putAbs(homeserverUrl + path)
             .putHeader("Authorization", "Bearer " + accessToken)
             .putHeader("Content-Type", "application/json");
-        return send(req.sendBuffer(Buffer.buffer(jsonBody == null ? "" : jsonBody)));
+        return handle(req.sendBuffer(body(jsonBody)));
     }
 
-    private CompletionStage<String> send(HttpRequest<Buffer> req) {
-        return send(req.send());
+    @Override
+    public CompletionStage<String> post(String path, String accessToken, String jsonBody) {
+        HttpRequest<Buffer> req = client.postAbs(homeserverUrl + path)
+            .putHeader("Authorization", "Bearer " + accessToken)
+            .putHeader("Content-Type", "application/json");
+        return handle(req.sendBuffer(body(jsonBody)));
     }
 
-    private CompletionStage<String> send(io.vertx.core.Future<HttpResponse<Buffer>> future) {
+    private static Buffer body(String jsonBody) {
+        return Buffer.buffer(jsonBody == null ? "" : jsonBody);
+    }
+
+    private CompletionStage<String> handle(Future<HttpResponse<Buffer>> future) {
         CompletableFuture<String> result = new CompletableFuture<>();
         future.onComplete(ar -> {
             if (ar.failed()) {
@@ -65,13 +77,8 @@ public class VertxHttpTransport implements HttpTransport {
             HttpResponse<Buffer> resp = ar.result();
             int code = resp.statusCode();
             if (code == 429) {
-                String raw = resp.getHeader("Retry-After");
-                long retryMs = 1000L;
-                if (raw != null) {
-                    try { retryMs = Math.max(0L, Long.parseLong(raw.trim())) * 1000L; }
-                    catch (NumberFormatException ignored) {}
-                }
-                result.completeExceptionally(new RateLimitException("HTTP 429 rate limited", retryMs));
+                result.completeExceptionally(
+                    new RateLimitException("HTTP 429 rate limited", parseRetryAfterMillis(resp)));
             } else if (code >= 400) {
                 result.completeExceptionally(new MatrixException(
                     "HTTP " + code + ": " + resp.bodyAsString()));
@@ -80,5 +87,16 @@ public class VertxHttpTransport implements HttpTransport {
             }
         });
         return result;
+    }
+
+    /** Retry-After en secondes (RFC 9110) converti en ms ; 1 s par défaut (absent ou HTTP-date). */
+    private static long parseRetryAfterMillis(HttpResponse<Buffer> resp) {
+        String raw = resp.getHeader("Retry-After");
+        if (raw == null) return 1000L;
+        try {
+            return Math.max(0L, Long.parseLong(raw.trim())) * 1000L;
+        } catch (NumberFormatException e) {
+            return 1000L;
+        }
     }
 }

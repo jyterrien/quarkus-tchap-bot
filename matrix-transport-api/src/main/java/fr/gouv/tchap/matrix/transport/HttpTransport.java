@@ -14,4 +14,6 @@ public interface HttpTransport {
     CompletionStage<String> get(String path, String accessToken);
 
     CompletionStage<String> put(String path, String accessToken, String jsonBody);
+
+    CompletionStage<String> post(String path, String accessToken, String jsonBody);
 }

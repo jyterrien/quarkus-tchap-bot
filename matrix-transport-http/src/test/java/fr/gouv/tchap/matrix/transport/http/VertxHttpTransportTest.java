@@ -1,4 +1,3 @@
-
 package fr.gouv.tchap.matrix.transport.http;
 
 import fr.gouv.tchap.matrix.exception.MatrixException;
@@ -104,6 +103,42 @@ class VertxHttpTransportTest {
         assertEquals("application/json", contentType.get());
         assertEquals("Bearer tok", auth.get());
         assertEquals("{\"body\":\"hi\"}", receivedBody.get());
+    }
+
+    @Test
+    void post_sendsJsonBodyAndContentType() {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> contentType = new AtomicReference<>();
+        AtomicReference<String> auth = new AtomicReference<>();
+        AtomicReference<String> receivedBody = new AtomicReference<>();
+
+        String url = startServer(req -> req.bodyHandler(buf -> {
+            method.set(req.method().name());
+            contentType.set(req.getHeader("Content-Type"));
+            auth.set(req.getHeader("Authorization"));
+            receivedBody.set(buf.toString());
+            req.response().setStatusCode(200).end("{\"room_id\":\"!r:s\"}");
+        }));
+
+        String body = new VertxHttpTransport(vertx, url)
+            .post("/_matrix/client/v3/rooms/r/join", "tok", "{}")
+            .toCompletableFuture().join();
+
+        assertEquals("{\"room_id\":\"!r:s\"}", body);
+        assertEquals("POST", method.get());
+        assertEquals("application/json", contentType.get());
+        assertEquals("Bearer tok", auth.get());
+        assertEquals("{}", receivedBody.get());
+    }
+
+    @Test
+    void post_status429_mapsToRateLimitException() {
+        String url = startServer(req ->
+            req.response().setStatusCode(429).putHeader("Retry-After", "3").end("{}"));
+
+        Throwable cause = failureOf(new VertxHttpTransport(vertx, url).post("/x", "tok", "{}"));
+
+        assertEquals(3000L, assertInstanceOf(RateLimitException.class, cause).retryAfterMillis());
     }
 
     @Test
