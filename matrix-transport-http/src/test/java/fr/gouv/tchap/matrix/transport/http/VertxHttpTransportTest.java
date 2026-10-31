@@ -223,6 +223,48 @@ class VertxHttpTransportTest {
         assertInstanceOf(MatrixException.class, cause);
     }
 
+    @Test
+    void status429_withRetryAfterMsInBody_isUsed() {
+        String url = startServer(req -> req.response().setStatusCode(429).end(
+            "{\"errcode\":\"M_LIMIT_EXCEEDED\",\"error\":\"Too Many Requests\",\"retry_after_ms\":2500}"));
+
+        Throwable cause = failureOf(transport(url).get("/x", "tok"));
+
+        assertEquals(2500L, assertInstanceOf(RateLimitException.class, cause).retryAfterMillis());
+    }
+
+    @Test
+    void status429_bodyRetryAfterMs_takesPrecedenceOverHeader() {
+        String url = startServer(req -> req.response().setStatusCode(429)
+            .putHeader("Retry-After", "7")
+            .end("{\"errcode\":\"M_LIMIT_EXCEEDED\",\"retry_after_ms\":2500}"));
+
+        Throwable cause = failureOf(transport(url).get("/x", "tok"));
+
+        assertEquals(2500L, assertInstanceOf(RateLimitException.class, cause).retryAfterMillis());
+    }
+
+    @Test
+    void status429_unparseableBody_fallsBackToHeader() {
+        String url = startServer(req -> req.response().setStatusCode(429)
+            .putHeader("Retry-After", "3")
+            .end("<html>busy</html>"));
+
+        Throwable cause = failureOf(transport(url).get("/x", "tok"));
+
+        assertEquals(3000L, assertInstanceOf(RateLimitException.class, cause).retryAfterMillis());
+    }
+
+    @Test
+    void status429_negativeRetryAfterMs_isClampedToZero() {
+        String url = startServer(req -> req.response().setStatusCode(429)
+            .end("{\"retry_after_ms\":-5}"));
+
+        Throwable cause = failureOf(transport(url).get("/x", "tok"));
+
+        assertEquals(0L, assertInstanceOf(RateLimitException.class, cause).retryAfterMillis());
+    }
+
     // ---------- Cycle de vie ----------
 
     private static Thread captureEventLoopThread(Vertx v) throws InterruptedException {

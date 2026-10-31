@@ -1,9 +1,9 @@
 package fr.gouv.tchap.quarkus;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gouv.tchap.matrix.client.MatrixClient;
 import fr.gouv.tchap.matrix.core.client.DefaultMatrixClient;
+import fr.gouv.tchap.matrix.core.client.MatrixClientOptions;
+import fr.gouv.tchap.matrix.core.sync.FileSyncTokenStore;
 import fr.gouv.tchap.matrix.core.sync.InMemorySyncTokenStore;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
@@ -11,6 +11,8 @@ import fr.gouv.tchap.matrix.transport.HttpTransport;
 import fr.gouv.tchap.matrix.transport.http.VertxHttpTransport;
 import fr.gouv.tchap.quarkus.config.TchapConfig;
 import fr.gouv.tchap.quarkus.events.TchapEventPublisher;
+import fr.gouv.tchap.quarkus.events.TchapMessageMapper;
+import io.quarkus.arc.DefaultBean;
 import io.quarkus.runtime.Startup;
 import io.vertx.core.Vertx;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -19,6 +21,7 @@ import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
 
+import java.nio.file.Path;
 import java.util.function.Consumer;
 
 @ApplicationScoped
@@ -26,16 +29,29 @@ public class TchapClientProducer {
 
     private static final Logger LOG = Logger.getLogger(TchapClientProducer.class);
 
+    /**
+     * Magasin du token de sync selon {@code quarkus.tchap.sync.store}.
+     * {@code @DefaultBean} : une application peut fournir son propre bean SyncTokenStore
+     * (base de données, etc.), qui remplace alors celui-ci.
+     */
     @Produces
     @Singleton
-    public SyncTokenStore syncTokenStore() {
-        return new InMemorySyncTokenStore();
+    @DefaultBean
+    public SyncTokenStore syncTokenStore(TchapConfig config) {
+        return switch (config.sync().store()) {
+            case MEMORY -> new InMemorySyncTokenStore();
+            case FILE -> new FileSyncTokenStore(Path.of(config.sync().storePath()));
+        };
     }
 
     @Produces
     @Singleton
     public HttpTransport httpTransport(TchapConfig config, Vertx vertx) {
         return new VertxHttpTransport(vertx, config.homeserverUrl().toString());
+    }
+
+    void disposeTransport(@Disposes HttpTransport transport) {
+        transport.close();
     }
 
     @Produces
@@ -49,43 +65,20 @@ public class TchapClientProducer {
             .orElseThrow(() -> new IllegalStateException("quarkus.tchap.access-token is required"));
         String userId = config.userId().orElse(null);
 
-        Consumer<MatrixEvent> consumer = ev -> publish(publisher, ev, config.bot().ignoreSelfMessages(), userId);
-
-        return new DefaultMatrixClient(
-            httpTransport,
-            token,
-            userId,
-            tokenStore,
-            consumer,
-            config.sync().initialLimit()
-        );
-    }
-
-    void dispose(@Disposes MatrixClient client) {
-        try {
-            client.stop().toCompletableFuture().get();
-        } catch (Exception e) {
-            LOG.warn("Error while stopping MatrixClient", e);
+        boolean ignoreSelf = config.bot().ignoreSelfMessages();
+        if (ignoreSelf && userId == null) {
+            LOG.warn("quarkus.tchap.user-id is not set: quarkus.tchap.bot.ignore-self-messages "
+                + "has no effect and the bot will receive its own messages");
         }
-    }
 
-    private void publish(TchapEventPublisher publisher, MatrixEvent ev, boolean ignoreSelf, String botUserId) {
-        LOG.infof("RAW EVENT: type=%s room=%s sender=%s", ev.type(), ev.roomId(), ev.sender());
-        if (ignoreSelf && botUserId != null && botUserId.equals(ev.sender())) return;
-        if (!"m.room.message".equals(ev.type())) return;
-        try {
-            JsonNode content = new ObjectMapper().readTree(ev.content());
-            String body = content.path("body").asText("");
-            String msgtype = content.path("msgtype").asText("m.text");
-            publisher.publish(new fr.gouv.tchap.quarkus.events.TchapMessage(
-                ev.eventId(), ev.roomId(), ev.sender(), body, ev.timestamp(), false, msgtype
-            ));
-        } catch (Exception e) {
-            LOG.warnf("Cannot parse m.room.message content for event %s: %s", ev.eventId(), e.getMessage());
-        }
-    }
+        TchapMessageMapper mapper = new TchapMessageMapper(ignoreSelf, userId);
+        Consumer<MatrixEvent> consumer = ev -> mapper.map(ev).ifPresent(publisher::publish);
 
-    void disposeTransport(@Disposes HttpTransport transport) {
-        transport.close();
+        MatrixClientOptions options = new MatrixClientOptions(
+            config.sync().initialLimit(),
+            config.sync().timeout(),
+            config.bot().autoJoinInvitedRooms());
+
+        return new DefaultMatrixClient(httpTransport, token, userId, tokenStore, consumer, options);
     }
 }

@@ -1,6 +1,7 @@
 package fr.gouv.tchap.quarkus.lifecycle;
 
 import fr.gouv.tchap.matrix.client.MatrixClient;
+import fr.gouv.tchap.quarkus.config.TchapConfig;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -20,7 +21,15 @@ public class TchapLifecycle {
     @Inject
     MatrixClient client;
 
+    @Inject
+    TchapConfig config;
+
     void onStart(@Observes StartupEvent event) {
+        if (!config.sync().enabled()) {
+            LOG.info("Tchap sync disabled (quarkus.tchap.sync.enabled=false): "
+                + "the bot can send messages but will not receive any");
+            return;
+        }
         LOG.info("Starting Tchap bot");
         try {
             client.start().toCompletableFuture().get(START_TIMEOUT_SEC, TimeUnit.SECONDS);
@@ -32,6 +41,7 @@ public class TchapLifecycle {
     }
 
     void onStop(@Observes ShutdownEvent event) {
+        if (!config.sync().enabled()) return;
         LOG.info("Stopping Tchap bot");
         try {
             client.stop().toCompletableFuture().get(STOP_TIMEOUT_SEC, TimeUnit.SECONDS);

@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Parse la réponse /sync et extrait les événements timeline.
+ * Parse la réponse /sync et extrait les événements timeline et les invitations.
  * Livraison at-least-once : la déduplication par event_id est faite par SyncEngine.
  */
 public class SyncEventParser {
@@ -23,6 +23,17 @@ public class SyncEventParser {
     public String extractNextBatch(String json) {
         try {
             return mapper.readTree(json).path("next_batch").asText(null);
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid /sync response", e);
+        }
+    }
+
+    /** Identifiants des salons où l'utilisateur est invité (rooms.invite). */
+    public List<String> parseInvitedRoomIds(String json) {
+        try {
+            List<String> roomIds = new ArrayList<>();
+            mapper.readTree(json).path("rooms").path("invite").fieldNames().forEachRemaining(roomIds::add);
+            return roomIds;
         } catch (Exception e) {
             throw new RuntimeException("Invalid /sync response", e);
         }

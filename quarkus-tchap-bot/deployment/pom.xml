@@ -33,7 +33,10 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-micrometer-registry-prometheus-deployment</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-context-propagation-deployment</artifactId>
+        </dependency>
         <!-- Tests -->
         <dependency>
             <groupId>io.quarkus</groupId>

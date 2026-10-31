@@ -19,7 +19,12 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.WARNING;
+
 public class DefaultMatrixClient implements MatrixClient {
+
+    private static final System.Logger LOG = System.getLogger(DefaultMatrixClient.class.getName());
 
     private final Session session;
     private final MessageService messageService;
@@ -27,30 +32,41 @@ public class DefaultMatrixClient implements MatrixClient {
     private final SyncEngine syncEngine;
     private final AtomicReference<ClientStatus> status = new AtomicReference<>(ClientStatus.NEW);
 
-    /** Aucun historique rejoué au premier sync (initialLimit = 0). */
+    /** Options par défaut : voir {@link MatrixClientOptions#defaults()}. */
     public DefaultMatrixClient(HttpTransport transport,
                                String accessToken,
                                String userId,
                                SyncTokenStore tokenStore,
                                Consumer<MatrixEvent> eventConsumer) {
-        this(transport, accessToken, userId, tokenStore, eventConsumer, 0);
+        this(transport, accessToken, userId, tokenStore, eventConsumer, MatrixClientOptions.defaults());
     }
 
-    /**
-     * @param initialLimit nombre d'événements d'historique par salon livrés au premier sync
-     *                     (0 = aucun, valeur négative = comportement par défaut du serveur).
-     */
     public DefaultMatrixClient(HttpTransport transport,
                                String accessToken,
                                String userId,
                                SyncTokenStore tokenStore,
                                Consumer<MatrixEvent> eventConsumer,
-                               int initialLimit) {
+                               MatrixClientOptions options) {
         MatrixHttpApi api = new MatrixHttpApi(transport, accessToken);
+        RoomService rooms = new DefaultRoomService(api);
         this.session = new DefaultSession(userId, null, accessToken);
         this.messageService = new DefaultMessageService(api, new UuidTransactionIdGenerator());
-        this.roomService = new DefaultRoomService(api);
-        this.syncEngine = new SyncEngine(api, tokenStore, eventConsumer, initialLimit);
+        this.roomService = rooms;
+
+        Consumer<String> inviteHandler = options.autoJoinInvites()
+            ? roomId -> autoJoin(rooms, roomId)
+            : null;
+        this.syncEngine = new SyncEngine(api, tokenStore, eventConsumer, inviteHandler,
+            options.initialLimit(), options.syncTimeoutMs());
+    }
+
+    private static void autoJoin(RoomService rooms, String roomId) {
+        LOG.log(INFO, "Auto-joining invited room {0}", roomId);
+        rooms.join(roomId).whenComplete((v, ex) -> {
+            if (ex != null) {
+                LOG.log(WARNING, "Auto-join failed for room " + roomId, ex);
+            }
+        });
     }
 
     @Override

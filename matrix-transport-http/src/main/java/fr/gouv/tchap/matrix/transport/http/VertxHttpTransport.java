@@ -7,6 +7,7 @@ import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
@@ -161,14 +162,33 @@ public class VertxHttpTransport implements HttpTransport {
         return result;
     }
 
-    /** Retry-After en secondes (RFC 9110) converti en ms ; 1 s par défaut (absent ou HTTP-date). */
+    /**
+     * Délai avant réessai d'un 429, par ordre de priorité :
+     * 1. champ JSON {@code retry_after_ms} du corps (spec Matrix, M_LIMIT_EXCEEDED) ;
+     * 2. en-tête Retry-After en secondes (RFC 9110) ;
+     * 3. 1 s par défaut (absent, illisible ou HTTP-date).
+     */
     private static long parseRetryAfterMillis(HttpResponse<Buffer> resp) {
+        Long fromBody = retryAfterFromBody(resp);
+        if (fromBody != null) return fromBody;
         String raw = resp.getHeader("Retry-After");
         if (raw == null) return 1000L;
         try {
             return Math.max(0L, Long.parseLong(raw.trim())) * 1000L;
         } catch (NumberFormatException e) {
             return 1000L;
+        }
+    }
+
+    private static Long retryAfterFromBody(HttpResponse<Buffer> resp) {
+        try {
+            Buffer body = resp.body();
+            if (body == null) return null;
+            Long ms = new JsonObject(body).getLong("retry_after_ms");
+            return ms == null ? null : Math.max(0L, ms);
+        } catch (RuntimeException e) {
+            // corps vide, non JSON, ou champ d'un autre type : on retombe sur l'en-tête
+            return null;
         }
     }
 }

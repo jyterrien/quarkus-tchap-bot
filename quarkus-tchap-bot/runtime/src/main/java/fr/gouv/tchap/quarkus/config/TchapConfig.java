@@ -1,13 +1,13 @@
 package fr.gouv.tchap.quarkus.config;
 
-import java.net.URI;
-import java.util.Optional;
-
 import io.quarkus.runtime.annotations.ConfigPhase;
 import io.quarkus.runtime.annotations.ConfigRoot;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
+
+import java.net.URI;
+import java.util.Optional;
 
 @ConfigMapping(prefix = "quarkus.tchap")
 @ConfigRoot(phase = ConfigPhase.RUN_TIME)
@@ -50,6 +50,7 @@ public interface TchapConfig {
 
         /**
          * Active ou désactive la synchronisation automatique.
+         * Désactivée, le bot peut envoyer des messages mais ne reçoit aucun événement.
          */
         @WithDefault("true")
         boolean enabled();
@@ -69,10 +70,25 @@ public interface TchapConfig {
         int initialLimit();
 
         /**
-         * Type de stockage du token de synchronisation (memory, file, database).
+         * Type de stockage du token de synchronisation.
+         * {@code memory} : perdu à chaque redémarrage. {@code file} : voir {@code store-path}.
+         * Pour un autre stockage (base de données, etc.), fournir son propre bean
+         * {@code SyncTokenStore} : il remplace celui de l'extension.
          */
         @WithDefault("memory")
-        String store();
+        StoreType store();
+
+        /**
+         * Chemin du fichier du token quand {@code store=file}.
+         */
+        @WithName("store-path")
+        @WithDefault(".tchap/sync-token")
+        String storePath();
+
+        enum StoreType {
+            MEMORY,
+            FILE
+        }
     }
 
     interface BotConfig {
@@ -86,6 +102,7 @@ public interface TchapConfig {
 
         /**
          * Rejoint automatiquement les salons auxquels le bot est invité.
+         * Attention : tout utilisateur pouvant inviter le bot peut alors lui faire rejoindre un salon.
          */
         @WithName("auto-join-invited-rooms")
         @WithDefault("false")
