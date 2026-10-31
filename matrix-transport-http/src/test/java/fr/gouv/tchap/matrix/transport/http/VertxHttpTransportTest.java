@@ -11,7 +11,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -35,8 +39,19 @@ class VertxHttpTransportTest {
         vertx.close().toCompletionStage().toCompletableFuture().join();
     }
 
+    private final List<VertxHttpTransport> transports = new ArrayList<>();
+
+    /** Crée un transport sur le Vertx partagé et le ferme automatiquement après le test. */
+    private VertxHttpTransport transport(String url) {
+        VertxHttpTransport t = new VertxHttpTransport(vertx, url);
+        transports.add(t);
+        return t;
+    }
+
     @AfterEach
     void stopServer() {
+        transports.forEach(VertxHttpTransport::close);
+        transports.clear();
         if (server != null) {
             server.close().toCompletionStage().toCompletableFuture().join();
             server = null;
@@ -69,7 +84,7 @@ class VertxHttpTransportTest {
             req.response().setStatusCode(200).end("{\"next_batch\":\"s1\"}");
         });
 
-        String body = new VertxHttpTransport(vertx, url)
+        String body = transport(url)
             .get("/_matrix/client/v3/sync?timeout=0", "tok")
             .toCompletableFuture().join();
 
@@ -94,7 +109,7 @@ class VertxHttpTransportTest {
             req.response().setStatusCode(200).end("{\"event_id\":\"$e1\"}");
         }));
 
-        String body = new VertxHttpTransport(vertx, url)
+        String body = transport(url)
             .put("/rooms/r/send/m.room.message/t1", "tok", "{\"body\":\"hi\"}")
             .toCompletableFuture().join();
 
@@ -120,7 +135,7 @@ class VertxHttpTransportTest {
             req.response().setStatusCode(200).end("{\"room_id\":\"!r:s\"}");
         }));
 
-        String body = new VertxHttpTransport(vertx, url)
+        String body = transport(url)
             .post("/_matrix/client/v3/rooms/r/join", "tok", "{}")
             .toCompletableFuture().join();
 
@@ -136,7 +151,7 @@ class VertxHttpTransportTest {
         String url = startServer(req ->
             req.response().setStatusCode(429).putHeader("Retry-After", "3").end("{}"));
 
-        Throwable cause = failureOf(new VertxHttpTransport(vertx, url).post("/x", "tok", "{}"));
+        Throwable cause = failureOf(transport(url).post("/x", "tok", "{}"));
 
         assertEquals(3000L, assertInstanceOf(RateLimitException.class, cause).retryAfterMillis());
     }
@@ -149,7 +164,7 @@ class VertxHttpTransportTest {
             req.response().end("ok");
         });
 
-        new VertxHttpTransport(vertx, url + "/")
+        transport(url + "/")
             .get("/ping", "tok").toCompletableFuture().join();
 
         assertEquals("/ping", uri.get());
@@ -160,7 +175,7 @@ class VertxHttpTransportTest {
         String url = startServer(req ->
             req.response().setStatusCode(429).putHeader("Retry-After", "2").end("{}"));
 
-        Throwable cause = failureOf(new VertxHttpTransport(vertx, url).get("/x", "tok"));
+        Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
         RateLimitException rle = assertInstanceOf(RateLimitException.class, cause);
         assertEquals(2000L, rle.retryAfterMillis());
@@ -170,7 +185,7 @@ class VertxHttpTransportTest {
     void status429_withoutRetryAfter_defaultsToOneSecond() {
         String url = startServer(req -> req.response().setStatusCode(429).end("{}"));
 
-        Throwable cause = failureOf(new VertxHttpTransport(vertx, url).get("/x", "tok"));
+        Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
         RateLimitException rle = assertInstanceOf(RateLimitException.class, cause);
         assertEquals(1000L, rle.retryAfterMillis());
@@ -181,7 +196,7 @@ class VertxHttpTransportTest {
         String url = startServer(req -> req.response().setStatusCode(429)
             .putHeader("Retry-After", "Wed, 21 Oct 2026 07:28:00 GMT").end("{}"));
 
-        Throwable cause = failureOf(new VertxHttpTransport(vertx, url).get("/x", "tok"));
+        Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
         assertEquals(1000L, assertInstanceOf(RateLimitException.class, cause).retryAfterMillis());
     }
@@ -191,7 +206,7 @@ class VertxHttpTransportTest {
         String url = startServer(req ->
             req.response().setStatusCode(500).end("{\"errcode\":\"M_UNKNOWN\"}"));
 
-        Throwable cause = failureOf(new VertxHttpTransport(vertx, url).get("/x", "tok"));
+        Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
         assertInstanceOf(MatrixException.class, cause);
         assertFalse(cause instanceof RateLimitException);
@@ -202,9 +217,74 @@ class VertxHttpTransportTest {
     @Test
     void connectionRefused_mapsToMatrixException() {
         // Port 1 : personne n'écoute, la connexion est refusée immédiatement.
-        Throwable cause = failureOf(new VertxHttpTransport(vertx, "http://127.0.0.1:1")
+        Throwable cause = failureOf(transport("http://127.0.0.1:1")
             .get("/x", "tok"));
 
         assertInstanceOf(MatrixException.class, cause);
+    }
+
+    // ---------- Cycle de vie ----------
+
+    private static Thread captureEventLoopThread(Vertx v) throws InterruptedException {
+        AtomicReference<Thread> ref = new AtomicReference<>();
+        CountDownLatch latch = new CountDownLatch(1);
+        v.runOnContext(x -> {
+            ref.set(Thread.currentThread());
+            latch.countDown();
+        });
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        return ref.get();
+    }
+
+    @Test
+    void close_withExternalVertx_leavesVertxRunning() throws Exception {
+        Vertx external = Vertx.vertx();
+        try {
+            Thread eventLoop = captureEventLoopThread(external);
+            VertxHttpTransport t = new VertxHttpTransport(external, "http://127.0.0.1:1");
+
+            t.close();
+
+            assertTrue(eventLoop.isAlive(), "le Vertx de l'appelant ne doit pas être fermé");
+        } finally {
+            external.close().toCompletionStage().toCompletableFuture().join();
+        }
+    }
+
+    @Test
+    void close_withOwnedVertx_stopsItsEventLoop() throws Exception {
+        Vertx owned = Vertx.vertx();
+        Thread eventLoop = captureEventLoopThread(owned);
+        VertxHttpTransport t = new VertxHttpTransport("http://127.0.0.1:1", owned, true);
+
+        t.close();
+
+        eventLoop.join(5_000);
+        assertFalse(eventLoop.isAlive(), "le Vertx possédé par le transport doit être fermé");
+    }
+
+    @Test
+    void close_isIdempotent_andWorksWithStringConstructor() {
+        VertxHttpTransport t = new VertxHttpTransport("http://127.0.0.1:1");
+
+        assertDoesNotThrow(t::close);
+        assertDoesNotThrow(t::close);
+    }
+
+    @Test
+    void requestsAfterClose_failWithMatrixException() {
+        VertxHttpTransport t = new VertxHttpTransport(vertx, "http://127.0.0.1:1");
+        t.close();
+
+        Throwable cause = failureOf(t.get("/x", "tok"));
+
+        assertInstanceOf(MatrixException.class, cause);
+        assertTrue(cause.getMessage().contains("closed"));
+    }
+
+    @Test
+    void blankHomeserverUrl_isRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new VertxHttpTransport(vertx, " "));
+        assertThrows(IllegalArgumentException.class, () -> new VertxHttpTransport((String) null));
     }
 }
