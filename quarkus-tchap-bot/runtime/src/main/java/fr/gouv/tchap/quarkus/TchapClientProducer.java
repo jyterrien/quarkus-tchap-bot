@@ -84,4 +84,8 @@ public class TchapClientProducer {
             LOG.warnf("Cannot parse m.room.message content for event %s: %s", ev.eventId(), e.getMessage());
         }
     }
+
+    void disposeTransport(@Disposes HttpTransport transport) {
+        transport.close();
+    }
 }
