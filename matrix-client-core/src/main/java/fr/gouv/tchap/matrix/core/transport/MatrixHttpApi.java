@@ -22,12 +22,28 @@ public class MatrixHttpApi {
         this.accessToken = accessToken;
     }
 
-    /** GET /sync */
+    /** GET /sync, sans filtre. */
     public CompletionStage<String> sync(String since, long timeoutMs) {
+        return sync(since, timeoutMs, -1);
+    }
+
+    /**
+     * GET /sync.
+     *
+     * @param initialLimit nombre maximal d'événements de timeline par salon renvoyés
+     *                     lors du PREMIER sync (sans {@code since}). 0 = aucun historique.
+     *                     Valeur négative = pas de filtre (comportement par défaut du serveur).
+     *                     Ignoré dès qu'un {@code since} est fourni.
+     */
+    public CompletionStage<String> sync(String since, long timeoutMs, int initialLimit) {
         StringBuilder path = new StringBuilder(API_PREFIX)
             .append("/sync?timeout=").append(timeoutMs);
-        if (since != null && !since.isBlank()) {
+        boolean incremental = since != null && !since.isBlank();
+        if (incremental) {
             path.append("&since=").append(encode(since));
+        } else if (initialLimit >= 0) {
+            String filter = "{\"room\":{\"timeline\":{\"limit\":" + initialLimit + "}}}";
+            path.append("&filter=").append(encode(filter));
         }
         return transport.get(path.toString(), accessToken);
     }

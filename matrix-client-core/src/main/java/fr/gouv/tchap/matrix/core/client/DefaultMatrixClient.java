@@ -27,16 +27,30 @@ public class DefaultMatrixClient implements MatrixClient {
     private final SyncEngine syncEngine;
     private final AtomicReference<ClientStatus> status = new AtomicReference<>(ClientStatus.NEW);
 
+    /** Aucun historique rejoué au premier sync (initialLimit = 0). */
     public DefaultMatrixClient(HttpTransport transport,
                                String accessToken,
                                String userId,
                                SyncTokenStore tokenStore,
                                Consumer<MatrixEvent> eventConsumer) {
+        this(transport, accessToken, userId, tokenStore, eventConsumer, 0);
+    }
+
+    /**
+     * @param initialLimit nombre d'événements d'historique par salon livrés au premier sync
+     *                     (0 = aucun, valeur négative = comportement par défaut du serveur).
+     */
+    public DefaultMatrixClient(HttpTransport transport,
+                               String accessToken,
+                               String userId,
+                               SyncTokenStore tokenStore,
+                               Consumer<MatrixEvent> eventConsumer,
+                               int initialLimit) {
         MatrixHttpApi api = new MatrixHttpApi(transport, accessToken);
         this.session = new DefaultSession(userId, null, accessToken);
         this.messageService = new DefaultMessageService(api, new UuidTransactionIdGenerator());
         this.roomService = new DefaultRoomService(api);
-        this.syncEngine = new SyncEngine(api, tokenStore, eventConsumer);
+        this.syncEngine = new SyncEngine(api, tokenStore, eventConsumer, initialLimit);
     }
 
     @Override

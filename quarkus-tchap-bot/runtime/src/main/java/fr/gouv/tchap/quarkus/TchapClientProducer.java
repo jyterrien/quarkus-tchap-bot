@@ -56,7 +56,8 @@ public class TchapClientProducer {
             token,
             userId,
             tokenStore,
-            consumer
+            consumer,
+            config.sync().initialLimit()
         );
     }
 

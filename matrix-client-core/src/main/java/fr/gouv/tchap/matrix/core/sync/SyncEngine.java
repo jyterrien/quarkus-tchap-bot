@@ -22,13 +22,19 @@ public class SyncEngine {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ScheduledExecutorService executor;
     private volatile String currentToken;
+    private final int initialLimit;
 
-    public SyncEngine(MatrixHttpApi api,
-                      SyncTokenStore tokenStore,
-                      Consumer<MatrixEvent> eventConsumer) {
+    public SyncEngine(MatrixHttpApi api, SyncTokenStore tokenStore,
+                    Consumer<MatrixEvent> eventConsumer) {
+        this(api, tokenStore, eventConsumer, 0);
+    }
+
+    public SyncEngine(MatrixHttpApi api, SyncTokenStore tokenStore,
+                    Consumer<MatrixEvent> eventConsumer, int initialLimit) {
         this.api = api;
         this.tokenStore = tokenStore;
         this.eventConsumer = eventConsumer;
+        this.initialLimit = initialLimit;
         this.parser = new SyncEventParser(new ObjectMapper());
     }
 
@@ -58,8 +64,8 @@ public class SyncEngine {
 
     private void doSync() {
         if (!running.get()) return;
-        System.out.println("SYNC");                
-        api.sync(currentToken, 30_000)
+        System.out.println("SYNC");
+        api.sync(currentToken, 30_000, initialLimit)
             .thenAccept(response -> {
                 System.out.println(String.format("SYNC: %s", response.substring(0, Math.min(2000, response.length()))));
                  String nextBatch = parser.extractNextBatch(response);

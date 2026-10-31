@@ -1,13 +1,13 @@
 package fr.gouv.tchap.quarkus.config;
 
+import java.net.URI;
+import java.util.Optional;
+
 import io.quarkus.runtime.annotations.ConfigPhase;
 import io.quarkus.runtime.annotations.ConfigRoot;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
-
-import java.net.URI;
-import java.util.Optional;
 
 @ConfigMapping(prefix = "quarkus.tchap")
 @ConfigRoot(phase = ConfigPhase.RUN_TIME)
@@ -61,10 +61,11 @@ public interface TchapConfig {
         long timeout();
 
         /**
-         * Nombre initial d'événements récupérés lors du premier sync.
+         * Nombre d'événements d'historique livrés par salon au premier sync
+         * (0 = ne rejouer aucun ancien message).
          */
         @WithName("initial-limit")
-        @WithDefault("20")
+        @WithDefault("0")
         int initialLimit();
 
         /**
