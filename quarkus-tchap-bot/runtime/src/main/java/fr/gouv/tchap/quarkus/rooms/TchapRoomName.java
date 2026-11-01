@@ -31,6 +31,7 @@ public @interface TchapRoomName {
     String value();
 
     /** Instance programmatique, pour Event.select(...) ou Instance.select(...). */
+    // Pattern CDI standard : AnnotationLiteral + interface d'annotation
     final class Literal extends AnnotationLiteral<TchapRoomName> implements TchapRoomName {
 
         private static final long serialVersionUID = 1L;

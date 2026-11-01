@@ -1,0 +1,6 @@
+{
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.project.explorer.showNonJavaResources": true,
+    "java.dependency.packagePresentation": "hierarchical",
+    "java.settings.url": ".vscode/jdt-prefs.properties"
+}
