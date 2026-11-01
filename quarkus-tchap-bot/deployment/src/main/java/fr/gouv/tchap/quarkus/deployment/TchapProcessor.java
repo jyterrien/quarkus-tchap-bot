@@ -1,7 +1,6 @@
 package fr.gouv.tchap.quarkus.deployment;
 
 import fr.gouv.tchap.quarkus.TchapRecorder;
-import fr.gouv.tchap.quarkus.config.TchapConfig;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.Record;
