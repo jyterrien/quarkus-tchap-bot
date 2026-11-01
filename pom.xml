@@ -31,7 +31,7 @@
         <module>matrix-client-api</module>
         <module>matrix-client-core</module>
         <module>matrix-transport-http</module>
-        <module>quarkus-tchap-bot</module>
+        <module>quarkus-tchap-bot-parent</module>
         <module>quarkus-tchap-bot-integration-tests</module>
         <module>matrix-integration-tests</module>
         <module>examples</module>
