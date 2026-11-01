@@ -14,6 +14,9 @@ import io.smallrye.config.WithName;
 @ConfigRoot(phase = ConfigPhase.BUILD_TIME)
 public interface TchapBuildTimeConfig {
 
+    /**
+     * Active la prise en charge du mode natif (GraalVM) pour l'extension Tchap.
+     */
     @WithName("native.enabled")
     @WithDefault("true")
     boolean nativeEnabled();

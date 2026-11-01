@@ -1,4 +1,4 @@
-package fr.gouv.tchap.quarkus.deployment;
+package fr.gouv.tchap.quarkus;
 
 import io.quarkus.runtime.annotations.Recorder;
 import org.jboss.logging.Logger;

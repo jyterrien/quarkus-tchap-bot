@@ -21,7 +21,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Teste VertxHttpTransport contre un vrai serveur HTTP local (Vert.x, port aléatoire).
+ * Teste VertxHttpTransport contre un vrai serveur HTTP local (Vert.x, port
+ * aléatoire).
  * Aucun mock : on vérifie ce qui part réellement sur le fil.
  */
 class VertxHttpTransportTest {
@@ -36,12 +37,15 @@ class VertxHttpTransportTest {
 
     @AfterAll
     static void stopVertx() {
-        vertx.close().toCompletionStage().toCompletableFuture().join();
+        // vertx.close().toCompletionStage().toCompletableFuture().join();
     }
 
     private final List<VertxHttpTransport> transports = new ArrayList<>();
 
-    /** Crée un transport sur le Vertx partagé et le ferme automatiquement après le test. */
+    /**
+     * Crée un transport sur le Vertx partagé et le ferme automatiquement après le
+     * test.
+     */
     private VertxHttpTransport transport(String url) {
         VertxHttpTransport t = new VertxHttpTransport(vertx, url);
         transports.add(t);
@@ -67,7 +71,7 @@ class VertxHttpTransportTest {
 
     private static Throwable failureOf(java.util.concurrent.CompletionStage<String> stage) {
         CompletionException ex = assertThrows(CompletionException.class,
-            () -> stage.toCompletableFuture().join());
+                () -> stage.toCompletableFuture().join());
         return ex.getCause();
     }
 
@@ -85,8 +89,8 @@ class VertxHttpTransportTest {
         });
 
         String body = transport(url)
-            .get("/_matrix/client/v3/sync?timeout=0", "tok")
-            .toCompletableFuture().join();
+                .get("/_matrix/client/v3/sync?timeout=0", "tok")
+                .toCompletableFuture().join();
 
         assertEquals("{\"next_batch\":\"s1\"}", body);
         assertEquals("GET", method.get());
@@ -110,8 +114,8 @@ class VertxHttpTransportTest {
         }));
 
         String body = transport(url)
-            .put("/rooms/r/send/m.room.message/t1", "tok", "{\"body\":\"hi\"}")
-            .toCompletableFuture().join();
+                .put("/rooms/r/send/m.room.message/t1", "tok", "{\"body\":\"hi\"}")
+                .toCompletableFuture().join();
 
         assertEquals("{\"event_id\":\"$e1\"}", body);
         assertEquals("PUT", method.get());
@@ -136,8 +140,8 @@ class VertxHttpTransportTest {
         }));
 
         String body = transport(url)
-            .post("/_matrix/client/v3/rooms/r/join", "tok", "{}")
-            .toCompletableFuture().join();
+                .post("/_matrix/client/v3/rooms/r/join", "tok", "{}")
+                .toCompletableFuture().join();
 
         assertEquals("{\"room_id\":\"!r:s\"}", body);
         assertEquals("POST", method.get());
@@ -148,8 +152,7 @@ class VertxHttpTransportTest {
 
     @Test
     void post_status429_mapsToRateLimitException() {
-        String url = startServer(req ->
-            req.response().setStatusCode(429).putHeader("Retry-After", "3").end("{}"));
+        String url = startServer(req -> req.response().setStatusCode(429).putHeader("Retry-After", "3").end("{}"));
 
         Throwable cause = failureOf(transport(url).post("/x", "tok", "{}"));
 
@@ -165,15 +168,14 @@ class VertxHttpTransportTest {
         });
 
         transport(url + "/")
-            .get("/ping", "tok").toCompletableFuture().join();
+                .get("/ping", "tok").toCompletableFuture().join();
 
         assertEquals("/ping", uri.get());
     }
 
     @Test
     void status429_withRetryAfter_mapsToRateLimitExceptionInMillis() {
-        String url = startServer(req ->
-            req.response().setStatusCode(429).putHeader("Retry-After", "2").end("{}"));
+        String url = startServer(req -> req.response().setStatusCode(429).putHeader("Retry-After", "2").end("{}"));
 
         Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
@@ -194,7 +196,7 @@ class VertxHttpTransportTest {
     @Test
     void status429_withHttpDateRetryAfter_fallsBackToOneSecond() {
         String url = startServer(req -> req.response().setStatusCode(429)
-            .putHeader("Retry-After", "Wed, 21 Oct 2026 07:28:00 GMT").end("{}"));
+                .putHeader("Retry-After", "Wed, 21 Oct 2026 07:28:00 GMT").end("{}"));
 
         Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
@@ -203,8 +205,7 @@ class VertxHttpTransportTest {
 
     @Test
     void status4xx5xx_mapsToMatrixExceptionWithStatusAndBody() {
-        String url = startServer(req ->
-            req.response().setStatusCode(500).end("{\"errcode\":\"M_UNKNOWN\"}"));
+        String url = startServer(req -> req.response().setStatusCode(500).end("{\"errcode\":\"M_UNKNOWN\"}"));
 
         Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
@@ -218,7 +219,7 @@ class VertxHttpTransportTest {
     void connectionRefused_mapsToMatrixException() {
         // Port 1 : personne n'écoute, la connexion est refusée immédiatement.
         Throwable cause = failureOf(transport("http://127.0.0.1:1")
-            .get("/x", "tok"));
+                .get("/x", "tok"));
 
         assertInstanceOf(MatrixException.class, cause);
     }
@@ -226,7 +227,7 @@ class VertxHttpTransportTest {
     @Test
     void status429_withRetryAfterMsInBody_isUsed() {
         String url = startServer(req -> req.response().setStatusCode(429).end(
-            "{\"errcode\":\"M_LIMIT_EXCEEDED\",\"error\":\"Too Many Requests\",\"retry_after_ms\":2500}"));
+                "{\"errcode\":\"M_LIMIT_EXCEEDED\",\"error\":\"Too Many Requests\",\"retry_after_ms\":2500}"));
 
         Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
@@ -236,8 +237,8 @@ class VertxHttpTransportTest {
     @Test
     void status429_bodyRetryAfterMs_takesPrecedenceOverHeader() {
         String url = startServer(req -> req.response().setStatusCode(429)
-            .putHeader("Retry-After", "7")
-            .end("{\"errcode\":\"M_LIMIT_EXCEEDED\",\"retry_after_ms\":2500}"));
+                .putHeader("Retry-After", "7")
+                .end("{\"errcode\":\"M_LIMIT_EXCEEDED\",\"retry_after_ms\":2500}"));
 
         Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
@@ -247,8 +248,8 @@ class VertxHttpTransportTest {
     @Test
     void status429_unparseableBody_fallsBackToHeader() {
         String url = startServer(req -> req.response().setStatusCode(429)
-            .putHeader("Retry-After", "3")
-            .end("<html>busy</html>"));
+                .putHeader("Retry-After", "3")
+                .end("<html>busy</html>"));
 
         Throwable cause = failureOf(transport(url).get("/x", "tok"));
 
@@ -258,7 +259,7 @@ class VertxHttpTransportTest {
     @Test
     void status429_negativeRetryAfterMs_isClampedToZero() {
         String url = startServer(req -> req.response().setStatusCode(429)
-            .end("{\"retry_after_ms\":-5}"));
+                .end("{\"retry_after_ms\":-5}"));
 
         Throwable cause = failureOf(transport(url).get("/x", "tok"));
 

@@ -7,6 +7,7 @@ import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
 
 import java.net.URI;
+import java.util.Map;
 import java.util.Optional;
 
 @ConfigMapping(prefix = "quarkus.tchap")
@@ -32,6 +33,14 @@ public interface TchapConfig {
     Optional<String> userId();
 
     /**
+     * Salons nommés : {@code quarkus.tchap.rooms."nom".room=...}.
+     * Chaque salon s'injecte avec {@code @TchapRoomName("nom") TchapRoom} et ses messages
+     * s'observent avec {@code @Observes @TchapRoomName("nom") TchapMessage}.
+     * Sans aucun salon déclaré, le client suit tous les salons du compte.
+     */
+    Map<String, RoomConfig> rooms();
+
+    /**
      * Configuration de la synchronisation Matrix.
      */
     SyncConfig sync();
@@ -45,6 +54,21 @@ public interface TchapConfig {
      * Configuration du chiffrement (E2EE, hors MVP).
      */
     CryptoConfig crypto();
+
+    interface RoomConfig {
+
+        /**
+         * Identifiant (!id:serveur) ou alias (#nom:serveur) du salon.
+         */
+        String room();
+
+        /**
+         * Si vrai (défaut), l'application ne démarre pas quand ce salon ne peut pas être rejoint.
+         * Si faux, un avertissement est journalisé et le salon reste indisponible.
+         */
+        @WithDefault("true")
+        boolean required();
+    }
 
     interface SyncConfig {
 

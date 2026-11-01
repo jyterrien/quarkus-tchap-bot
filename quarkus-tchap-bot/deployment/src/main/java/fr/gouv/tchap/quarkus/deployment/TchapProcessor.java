@@ -1,5 +1,6 @@
 package fr.gouv.tchap.quarkus.deployment;
 
+import fr.gouv.tchap.quarkus.TchapRecorder;
 import fr.gouv.tchap.quarkus.config.TchapConfig;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
@@ -20,7 +21,7 @@ public class TchapProcessor {
     }
 
     @BuildStep
-    TchapFeatureBuildItem tchapFeature(TchapBuildTimeConfig buildTimeConfig, TchapConfig runtimeConfig) {
+    TchapFeatureBuildItem tchapFeature(TchapBuildTimeConfig buildTimeConfig) {
         // La référence à TchapConfig force Quarkus à l'enregistrer comme bean CDI.
         return new TchapFeatureBuildItem(false);
     }
@@ -28,22 +29,21 @@ public class TchapProcessor {
     @BuildStep
     void registerForReflection(BuildProducer<ReflectiveClassBuildItem> reflective) {
         reflective.produce(ReflectiveClassBuildItem
-            .builder(
-                "fr.gouv.tchap.matrix.core.sync.SyncEventParser",
-                "fr.gouv.tchap.matrix.transport.http.VertxHttpTransport",
-                "fr.gouv.tchap.quarkus.TchapClient",
-                "fr.gouv.tchap.quarkus.events.TchapMessage",
-                "fr.gouv.tchap.quarkus.events.TchapEventPublisher"
-            )
-            .methods(true)
-            .fields(true)
-            .build());
+                .builder(
+                        "fr.gouv.tchap.matrix.core.sync.SyncEventParser",
+                        "fr.gouv.tchap.matrix.transport.http.VertxHttpTransport",
+                        "fr.gouv.tchap.quarkus.TchapClient",
+                        "fr.gouv.tchap.quarkus.events.TchapMessage",
+                        "fr.gouv.tchap.quarkus.events.TchapEventPublisher")
+                .methods(true)
+                .fields(true)
+                .build());
     }
 
     @BuildStep
     void registerJacksonModules(BuildProducer<ServiceProviderBuildItem> services) {
         services.produce(ServiceProviderBuildItem.allProvidersFromClassPath(
-            "com.fasterxml.jackson.databind.Module"));
+                "com.fasterxml.jackson.databind.Module"));
     }
 
     @BuildStep

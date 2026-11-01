@@ -1,5 +1,7 @@
 package fr.gouv.tchap.quarkus.events;
 
+import fr.gouv.tchap.quarkus.rooms.TchapRoomName;
+import fr.gouv.tchap.quarkus.rooms.TchapRooms;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
@@ -11,13 +13,13 @@ import java.util.concurrent.RejectedExecutionException;
 /**
  * Publie les messages Tchap sous forme d'événements CDI.
  *
- * Les observers sont invoqués sur le pool de workers de Quarkus et NON sur l'event loop
- * Vert.x qui exécute la boucle /sync : un observer bloquant (JDBC, appel HTTP synchrone,
- * sendText(...).join()) ne bloque donc ni le polling ni les autres événements.
+ * Un message d'un salon nommé est publié avec le qualificatif {@link TchapRoomName} de ce salon :
+ * il atteint les observers qualifiés pour ce salon ET les observers sans qualificatif.
+ * Un message d'un salon non nommé n'atteint que les observers sans qualificatif.
  *
- * Conséquences : l'ordre de traitement entre deux messages n'est pas garanti
- * (ils peuvent s'exécuter en parallèle), et une exception d'observer est journalisée ici
- * sans affecter la boucle de synchronisation.
+ * Les observers sont invoqués sur le pool de workers de Quarkus et NON sur l'event loop
+ * Vert.x qui exécute la boucle /sync : un observer bloquant ne bloque donc ni le polling
+ * ni les autres événements. L'ordre de traitement entre deux messages n'est pas garanti.
  */
 @ApplicationScoped
 public class TchapEventPublisher {
@@ -30,6 +32,9 @@ public class TchapEventPublisher {
     @Inject
     ManagedExecutor executor;
 
+    @Inject
+    TchapRooms rooms;
+
     public void publish(TchapMessage message) {
         try {
             executor.execute(() -> fire(message));
@@ -41,7 +46,10 @@ public class TchapEventPublisher {
 
     private void fire(TchapMessage message) {
         try {
-            messageEvent.fire(message);
+            Event<TchapMessage> event = rooms.nameOf(message.roomId())
+                .map(name -> messageEvent.select(new TchapRoomName.Literal(name)))
+                .orElse(messageEvent);
+            event.fire(message);
         } catch (Exception e) {
             LOG.errorf(e, "Observer failed for message %s in room %s",
                 message.eventId(), message.roomId());

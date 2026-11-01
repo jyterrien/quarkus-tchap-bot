@@ -1,30 +1,32 @@
 package fr.gouv.tchap.examples.simple;
 
-import fr.gouv.tchap.quarkus.events.TchapMessage;
+import fr.gouv.tchap.quarkus.rooms.TchapRoom;
+import fr.gouv.tchap.quarkus.rooms.TchapRoomName;
 import io.quarkus.test.junit.QuarkusTest;
-import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * Smoke test CDI : vérifie que le contexte démarre et que les beans
- * attendus sont injectables. Aucun appel réseau n'est effectué.
- * Le comportement de !ping est testé séparément avec un mock de TchapClient.
+ * Smoke test CDI : vérifie que le contexte démarre et que le bot est lié au
+ * salon d'intégration. Aucun appel réseau n'est effectué.
  */
 @QuarkusTest
 class SimpleBotTest {
 
     @Inject
-    Event<TchapMessage> messageEvent;
+    SimpleBot bot;
 
     @Inject
-    SimpleBot bot;
+    @TchapRoomName("integration")
+    TchapRoom integration;
 
     @Test
     void contextStarts() {
-        assertNotNull(messageEvent);
         assertNotNull(bot);
+        assertNotNull(integration);
+        assertEquals("integration", integration.name());
     }
 }

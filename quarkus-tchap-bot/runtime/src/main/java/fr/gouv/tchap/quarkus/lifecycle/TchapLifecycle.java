@@ -2,6 +2,7 @@ package fr.gouv.tchap.quarkus.lifecycle;
 
 import fr.gouv.tchap.matrix.client.MatrixClient;
 import fr.gouv.tchap.quarkus.config.TchapConfig;
+import fr.gouv.tchap.quarkus.rooms.TchapRooms;
 import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -24,15 +25,28 @@ public class TchapLifecycle {
     @Inject
     TchapConfig config;
 
+    @Inject
+    TchapRooms rooms;
+
+    private volatile boolean syncStarted;
+
     void onStart(@Observes StartupEvent event) {
+        // Les salons nommés sont rejoints même si la synchronisation est désactivée : on veut pouvoir y écrire
+        boolean anyRoomAvailable = rooms.initialize();
+
         if (!config.sync().enabled()) {
             LOG.info("Tchap sync disabled (quarkus.tchap.sync.enabled=false): "
                 + "the bot can send messages but will not receive any");
             return;
         }
+        if (!anyRoomAvailable) {
+            LOG.warn("None of the configured Tchap rooms is available: sync not started");
+            return;
+        }
         LOG.info("Starting Tchap bot");
         try {
             client.start().toCompletableFuture().get(START_TIMEOUT_SEC, TimeUnit.SECONDS);
+            syncStarted = true;
             LOG.info("Tchap bot started");
         } catch (Exception e) {
             LOG.error("Failed to start Tchap bot", e);
@@ -41,7 +55,7 @@ public class TchapLifecycle {
     }
 
     void onStop(@Observes ShutdownEvent event) {
-        if (!config.sync().enabled()) return;
+        if (!syncStarted) return;
         LOG.info("Stopping Tchap bot");
         try {
             client.stop().toCompletableFuture().get(STOP_TIMEOUT_SEC, TimeUnit.SECONDS);

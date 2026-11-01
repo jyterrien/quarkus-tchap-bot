@@ -1,11 +1,9 @@
 # Simple Bot Example
 
-Bot minimal répondant `pong` à un message `!ping`.
+Bot minimal répondant `pong` à un message `!ping`, **confiné au salon
+d'intégration** `!BotsetIntgrationsTchapU2tHdMEN80D:agent.dinum.tchap.gouv.fr`.
 
-## Lancement en dev
+Le salon est déclaré dans `application.properties` :
 
-```bash
-export TCHAP_HOMESERVER_URL=https://matrix.agent.tchap.gouv.fr
-export TCHAP_ACCESS_TOKEN=syt_...
-export TCHAP_USER_ID=@monbot:tchap.gouv.fr
-./mvnw -pl examples/simple-bot quarkus:dev
+```properties
+quarkus.tchap.rooms."integration".room=!BotsetIntgrationsTchapU2tHdMEN80D:agent.dinum.tchap.gouv.fr
