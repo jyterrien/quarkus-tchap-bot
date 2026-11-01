@@ -1,20 +1,26 @@
 package fr.gouv.tchap.matrix.core.client;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gouv.tchap.matrix.auth.Session;
 import fr.gouv.tchap.matrix.client.ClientStatus;
 import fr.gouv.tchap.matrix.client.MatrixClient;
 import fr.gouv.tchap.matrix.core.auth.DefaultSession;
 import fr.gouv.tchap.matrix.core.message.DefaultMessageService;
 import fr.gouv.tchap.matrix.core.message.UuidTransactionIdGenerator;
+import fr.gouv.tchap.matrix.core.room.DefaultMatrixRoom;
 import fr.gouv.tchap.matrix.core.room.DefaultRoomService;
 import fr.gouv.tchap.matrix.core.sync.SyncEngine;
 import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
+import fr.gouv.tchap.matrix.exception.MatrixException;
 import fr.gouv.tchap.matrix.message.MessageService;
+import fr.gouv.tchap.matrix.room.MatrixRoom;
 import fr.gouv.tchap.matrix.room.RoomService;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
 
+import java.util.Collection;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -25,8 +31,11 @@ import static java.lang.System.Logger.Level.WARNING;
 public class DefaultMatrixClient implements MatrixClient {
 
     private static final System.Logger LOG = System.getLogger(DefaultMatrixClient.class.getName());
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final Session session;
+    private final String accessToken;
+    private final MatrixHttpApi api;
+    private final AtomicReference<Session> session;
     private final MessageService messageService;
     private final RoomService roomService;
     private final SyncEngine syncEngine;
@@ -47,9 +56,10 @@ public class DefaultMatrixClient implements MatrixClient {
                                SyncTokenStore tokenStore,
                                Consumer<MatrixEvent> eventConsumer,
                                MatrixClientOptions options) {
-        MatrixHttpApi api = new MatrixHttpApi(transport, accessToken);
+        this.accessToken = accessToken;
+        this.api = new MatrixHttpApi(transport, accessToken);
         RoomService rooms = new DefaultRoomService(api);
-        this.session = new DefaultSession(userId, null, accessToken);
+        this.session = new AtomicReference<>(new DefaultSession(userId, null, accessToken));
         this.messageService = new DefaultMessageService(api, new UuidTransactionIdGenerator());
         this.roomService = rooms;
 
@@ -70,6 +80,35 @@ public class DefaultMatrixClient implements MatrixClient {
     }
 
     @Override
+    public MatrixRoom room(String roomId) {
+        return new DefaultMatrixRoom(roomId, messageService);
+    }
+
+    @Override
+    public void restrictToRooms(Collection<String> roomIds) {
+        syncEngine.setRoomFilter(roomIds);
+    }
+
+    @Override
+    public CompletionStage<Session> verifySession() {
+        return api.whoami().thenApply(json -> {
+            JsonNode node;
+            try {
+                node = MAPPER.readTree(json);
+            } catch (Exception e) {
+                throw new MatrixException("Invalid whoami response: " + json, e);
+            }
+            String userId = node.path("user_id").asText(null);
+            if (userId == null || userId.isBlank()) {
+                throw new MatrixException("Missing user_id in whoami response: " + json);
+            }
+            Session verified = new DefaultSession(userId, node.path("device_id").asText(null), accessToken);
+            session.set(verified);
+            return verified;
+        });
+    }
+
+    @Override
     public CompletionStage<Void> start() {
         status.set(ClientStatus.STARTING);
         return syncEngine.start().thenRun(() -> status.set(ClientStatus.RUNNING));
@@ -83,6 +122,6 @@ public class DefaultMatrixClient implements MatrixClient {
 
     @Override public MessageService messages() { return messageService; }
     @Override public RoomService rooms()       { return roomService; }
-    @Override public Session session()         { return session; }
+    @Override public Session session()         { return session.get(); }
     @Override public ClientStatus status()     { return status.get(); }
 }

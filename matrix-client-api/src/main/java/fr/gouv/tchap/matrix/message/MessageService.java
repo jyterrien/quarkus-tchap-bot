@@ -10,4 +10,6 @@ public interface MessageService {
      * @return reçu contenant l'event_id généré par le serveur
      */
     CompletionStage<MessageReceipt> sendText(String roomId, String body);
+
+    CompletionStage<MessageReceipt> sendNotice(String roomId, String body);
 }

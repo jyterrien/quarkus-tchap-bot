@@ -6,8 +6,10 @@ import fr.gouv.tchap.matrix.exception.RateLimitException;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,6 +62,9 @@ public class SyncEngine {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile ScheduledExecutorService executor;
     private volatile String currentToken;
+
+    /** Salons suivis. Vide = tous les salons du compte. Remplacé atomiquement, jamais modifié. */
+    private volatile Set<String> roomFilter = Collections.emptySet();
 
     public SyncEngine(MatrixHttpApi api,
                       SyncTokenStore tokenStore,
@@ -164,7 +169,7 @@ public class SyncEngine {
 
     private void doSync() {
         if (!running.get()) return;
-        api.sync(currentToken, syncTimeoutMs, initialLimit)
+        api.sync(currentToken, syncTimeoutMs, initialLimit, roomFilter)
             .thenAccept(this::handleResponse)
             .exceptionally(ex -> {
                 Throwable cause = unwrap(ex);
@@ -185,6 +190,8 @@ public class SyncEngine {
             List<MatrixEvent> events = parser.parseEvents(response);
             LOG.log(DEBUG, "Sync OK: next_batch={0}, {1} event(s)", nextBatch, events.size());
             for (MatrixEvent ev : events) {
+                // Le serveur filtre déjà ; on ne se fie pas à lui pour l'isolation par salon
+                if (!isWatched(ev.roomId())) continue;
                 if (processedEventIds.add(ev.eventId())) {
                     deliver(ev);
                 }
@@ -212,6 +219,7 @@ public class SyncEngine {
     private void handleInvites(String response) {
         if (inviteConsumer == null) return;
         for (String roomId : parser.parseInvitedRoomIds(response)) {
+            if (!isWatched(roomId)) continue;
             try {
                 inviteConsumer.accept(roomId);
             } catch (Exception e) {
@@ -237,6 +245,21 @@ public class SyncEngine {
             t = t.getCause();
         }
         return t;
+    }
+
+    /**
+     * Restreint le suivi à ces salons (identifiants résolus). Collection vide : tous les salons.
+     * Pris en compte dès le prochain /sync ; peut être appelé avant ou après start().
+     */
+    public void setRoomFilter(Collection<String> roomIds) {
+        this.roomFilter = roomIds == null || roomIds.isEmpty()
+            ? Collections.emptySet()
+            : Collections.unmodifiableSet(new LinkedHashSet<>(roomIds));
+    }
+
+    private boolean isWatched(String roomId) {
+        Set<String> filter = roomFilter;
+        return filter.isEmpty() || filter.contains(roomId);
     }
 
     public boolean isRunning() { return running.get(); }

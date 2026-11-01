@@ -25,9 +25,18 @@ public class DefaultMessageService implements MessageService {
 
     @Override
     public CompletionStage<MessageReceipt> sendText(String roomId, String body) {
+        return send(roomId, "m.text", body);
+    }
+
+    @Override
+    public CompletionStage<MessageReceipt> sendNotice(String roomId, String body) {
+        return send(roomId, "m.notice", body);
+    }
+
+    private CompletionStage<MessageReceipt> send(String roomId, String msgtype, String body) {
         String txnId = txnGenerator.next();
         ObjectNode content = MAPPER.createObjectNode()
-            .put("msgtype", "m.text")
+            .put("msgtype", msgtype)
             .put("body", body);
         return api.sendMessage(roomId, txnId, content.toString())
             .thenApply(response -> new MessageReceipt(extractEventId(response)));

@@ -2,6 +2,7 @@ package fr.gouv.tchap.matrix.client;
 
 import fr.gouv.tchap.matrix.auth.Session;
 import fr.gouv.tchap.matrix.message.MessageService;
+import fr.gouv.tchap.matrix.room.MatrixRoom;
 import fr.gouv.tchap.matrix.room.RoomService;
 import java.util.concurrent.CompletionStage;
 
@@ -21,4 +22,15 @@ public interface MatrixClient {
     RoomService rooms();
     Session session();
     ClientStatus status();
+/** Accès restreint à un salon (identifiant résolu). Aucun appel réseau. */
+MatrixRoom room(String roomId);
+
+/**
+ * Restreint la synchronisation à ces salons : filtre côté serveur sur chaque /sync
+ * et rejet côté client des autres. Collection vide : tous les salons.
+ */
+void restrictToRooms(java.util.Collection<String> roomIds);
+
+/** Interroge le serveur (whoami) et met à jour session() avec l'identité réelle du token. */
+CompletionStage<Session> verifySession();
 }
