@@ -15,7 +15,7 @@
     <dependencies>
         <dependency>
             <groupId>fr.gouv.tchap</groupId>
-            <artifactId>quarkus-tchap-bot-deployment</artifactId>
+            <artifactId>quarkus-tchap-bot</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

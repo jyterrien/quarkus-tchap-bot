@@ -10,14 +10,14 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>tchap-bot-example-simple</artifactId>
+    <artifactId>tchap-bot-example-simple-bot</artifactId>
     <name>Tchap Bot Example - simple-bot</name>
 
     <dependencies>
         <!-- Extension Tchap Bot (runtime + deployment résolus via descriptor) -->
         <dependency>
             <groupId>fr.gouv.tchap</groupId>
-            <artifactId>quarkus-tchap-bot-runtime</artifactId>
+            <artifactId>quarkus-tchap-bot</artifactId>
         </dependency>
 
         <!-- Quarkus runtime minimal -->

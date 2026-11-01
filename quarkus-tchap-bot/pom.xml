@@ -6,31 +6,16 @@
 
     <parent>
         <groupId>fr.gouv.tchap</groupId>
-        <artifactId>quarkus-tchap-bot-parent</artifactId>
+        <artifactId>tchap-bot-parent</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>quarkus-tchap-bot</artifactId>
+    <artifactId>quarkus-tchap-bot-parent</artifactId>
     <packaging>pom</packaging>
-    <name>Quarkus Tchap Bot Extension</name>
+    <name>Quarkus Tchap Bot - Parent</name>
 
     <modules>
         <module>runtime</module>
         <module>deployment</module>
     </modules>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>fr.gouv.tchap</groupId>
-                <artifactId>quarkus-tchap-bot-runtime</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>fr.gouv.tchap</groupId>
-                <artifactId>quarkus-tchap-bot-deployment</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 </project>

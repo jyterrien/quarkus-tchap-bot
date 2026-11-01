@@ -5,12 +5,12 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>fr.gouv.tchap</groupId>
-        <artifactId>quarkus-tchap-bot-parent</artifactId>
+        <artifactId>tchap-bot-parent</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>tchap-bot-integration-tests</artifactId>
-    <name>Quarkus Tchap Bot - Functional Matrix Tests</name>
+    <artifactId>matrix-integration-tests</artifactId>
+    <name>Matrix - Integration Tests</name>
     <properties>
         <maven.install.skip>true</maven.install.skip>
         <maven.deploy.skip>true</maven.deploy.skip>
