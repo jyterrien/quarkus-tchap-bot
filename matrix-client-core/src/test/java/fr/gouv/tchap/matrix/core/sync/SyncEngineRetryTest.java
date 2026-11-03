@@ -8,12 +8,13 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
+import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 class SyncEngineRetryTest {
 
@@ -36,36 +37,21 @@ class SyncEngineRetryTest {
     }
 
     @Test
-    void afterARateLimit_engineRetriesAfterTheServerDelay_notTheDefaultFiveSeconds() throws Exception {
+    void afterARateLimit_engineRetriesAfterTheServerDelay_notTheDefaultFiveSeconds() {
         List<Long> callTimes = new CopyOnWriteArrayList<>();
-        CountDownLatch twoCalls = new CountDownLatch(2);
-
-        HttpTransport transport = new HttpTransport() {
-            @Override
-            public CompletionStage<String> get(String path, String accessToken) {
-                callTimes.add(System.nanoTime());
-                twoCalls.countDown();
-                return callTimes.size() == 1
-                    ? CompletableFuture.failedFuture(new RateLimitException("HTTP 429", 1_000))
-                    : CompletableFuture.completedFuture("{\"next_batch\":\"s1\"}");
-            }
-
-            @Override
-            public CompletionStage<String> put(String p, String t, String b) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public CompletionStage<String> post(String p, String t, String b) {
-                throw new UnsupportedOperationException();
-            }
-        };
+        HttpTransport transport = mock(HttpTransport.class);
+        doAnswer(invocation -> {
+            callTimes.add(System.nanoTime());
+            return callTimes.size() == 1
+                ? CompletableFuture.<String>failedFuture(new RateLimitException("HTTP 429", 1_000))
+                : CompletableFuture.completedFuture("{\"next_batch\":\"s1\"}");
+        }).when(transport).get(any(), any());
 
         SyncEngine engine = new SyncEngine(new MatrixHttpApi(transport, "tok"),
             new InMemorySyncTokenStore(), ev -> {});
         engine.start().toCompletableFuture().join();
         try {
-            assertTrue(twoCalls.await(10, TimeUnit.SECONDS), "deux /sync attendus");
+            awaitGets(transport, 2, 10_000);
         } finally {
             engine.stop().toCompletableFuture().join();
         }

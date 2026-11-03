@@ -5,46 +5,23 @@ import fr.gouv.tchap.matrix.transport.HttpTransport;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
+import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
+import static fr.gouv.tchap.matrix.core.HttpTransportMocks.getPaths;
+import static fr.gouv.tchap.matrix.core.HttpTransportMocks.scriptedGet;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Vérifie que le filtre « pas d'historique » n'est appliqué qu'au premier /sync. */
 class SyncEngineInitialSyncTest {
 
-    /** Transport qui enregistre les chemins GET et répond avec un next_batch croissant. */
-    static class SyncRecorder implements HttpTransport {
-        final List<String> paths = new CopyOnWriteArrayList<>();
-        final CountDownLatch twoCalls = new CountDownLatch(2);
-        private final AtomicInteger counter = new AtomicInteger();
-
-        @Override
-        public CompletionStage<String> get(String path, String accessToken) {
-            paths.add(path);
-            twoCalls.countDown();
-            return CompletableFuture.completedFuture(
-                "{\"next_batch\":\"s" + counter.incrementAndGet() + "\"}");
-        }
-
-        @Override
-        public CompletionStage<String> put(String path, String accessToken, String jsonBody) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public CompletionStage<String> post(String path, String accessToken, String jsonBody) {
-            throw new UnsupportedOperationException();
-        }
+    /** Réponses /sync successives : next_batch s1 puis s2 (répété). */
+    private static HttpTransport syncTransport() {
+        return scriptedGet("{\"next_batch\":\"s1\"}", "{\"next_batch\":\"s2\"}");
     }
 
     @Test
-    void firstSyncUsesFilter_nextSyncUsesSinceWithoutFilter() throws Exception {
-        SyncRecorder transport = new SyncRecorder();
+    void firstSyncUsesFilter_nextSyncUsesSinceWithoutFilter() {
+        HttpTransport transport = syncTransport();
         SyncEngine engine = new SyncEngine(
             new MatrixHttpApi(transport, "tok"),
             new InMemorySyncTokenStore(),
@@ -53,13 +30,14 @@ class SyncEngineInitialSyncTest {
 
         engine.start().toCompletableFuture().join();
         try {
-            assertTrue(transport.twoCalls.await(5, TimeUnit.SECONDS), "deux /sync attendus");
+            awaitGets(transport, 2);
         } finally {
             engine.stop().toCompletableFuture().join();
         }
 
-        String first = transport.paths.get(0);
-        String second = transport.paths.get(1);
+        List<String> paths = getPaths(transport);
+        String first = paths.get(0);
+        String second = paths.get(1);
         assertTrue(first.contains("filter="), first);
         assertFalse(first.contains("since="), first);
         assertTrue(second.contains("since=s1"), second);
@@ -67,8 +45,8 @@ class SyncEngineInitialSyncTest {
     }
 
     @Test
-    void existingTokenFromStore_skipsFilter() throws Exception {
-        SyncRecorder transport = new SyncRecorder();
+    void existingTokenFromStore_skipsFilter() {
+        HttpTransport transport = syncTransport();
         InMemorySyncTokenStore store = new InMemorySyncTokenStore();
         store.save("stored").toCompletableFuture().join();
         SyncEngine engine = new SyncEngine(
@@ -76,12 +54,13 @@ class SyncEngineInitialSyncTest {
 
         engine.start().toCompletableFuture().join();
         try {
-            assertTrue(transport.twoCalls.await(5, TimeUnit.SECONDS));
+            awaitGets(transport, 2);
         } finally {
             engine.stop().toCompletableFuture().join();
         }
 
-        assertTrue(transport.paths.get(0).contains("since=stored"));
-        assertFalse(transport.paths.get(0).contains("filter="));
+        String first = getPaths(transport).get(0);
+        assertTrue(first.contains("since=stored"));
+        assertFalse(first.contains("filter="));
     }
 }

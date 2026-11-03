@@ -1,16 +1,19 @@
 package fr.gouv.tchap.matrix.core.transport;
 
+import fr.gouv.tchap.matrix.transport.HttpTransport;
 import org.junit.jupiter.api.Test;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static fr.gouv.tchap.matrix.core.HttpTransportMocks.answeringEmptyJson;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 class MatrixHttpApiRoomsTest {
 
-    private final RecordingHttpTransport transport = new RecordingHttpTransport();
+    private final HttpTransport transport = answeringEmptyJson();
     private final MatrixHttpApi api = new MatrixHttpApi(transport, "tok");
 
     private static String enc(String s) {
@@ -22,7 +25,8 @@ class MatrixHttpApiRoomsTest {
         api.sync(null, 30_000, 0, List.of("!a:s", "!b:s")).toCompletableFuture().join();
 
         String filter = "{\"room\":{\"rooms\":[\"!a:s\",\"!b:s\"],\"timeline\":{\"limit\":0}}}";
-        assertEquals("/_matrix/client/v3/sync?timeout=30000&filter=" + enc(filter), transport.path);
+        verify(transport).get("/_matrix/client/v3/sync?timeout=30000&filter=" + enc(filter), "tok");
+        verifyNoMoreInteractions(transport);
     }
 
     @Test
@@ -30,32 +34,31 @@ class MatrixHttpApiRoomsTest {
         api.sync("s1", 30_000, 0, List.of("!a:s")).toCompletableFuture().join();
 
         String filter = "{\"room\":{\"rooms\":[\"!a:s\"]}}";
-        assertEquals("/_matrix/client/v3/sync?timeout=30000&since=s1&filter=" + enc(filter), transport.path);
+        verify(transport).get("/_matrix/client/v3/sync?timeout=30000&since=s1&filter=" + enc(filter), "tok");
+        verifyNoMoreInteractions(transport);
     }
 
     @Test
     void sync_incremental_withoutRooms_hasNoFilter() {
         api.sync("s1", 30_000, 0, List.of()).toCompletableFuture().join();
 
-        assertEquals("/_matrix/client/v3/sync?timeout=30000&since=s1", transport.path);
+        verify(transport).get("/_matrix/client/v3/sync?timeout=30000&since=s1", "tok");
+        verifyNoMoreInteractions(transport);
     }
 
     @Test
     void joinByIdOrAlias_postsToJoinEndpoint_withEncodedAlias() {
         api.joinByIdOrAlias("#astreinte:agent.tchap.gouv.fr").toCompletableFuture().join();
 
-        assertEquals("POST", transport.method);
-        assertEquals("/_matrix/client/v3/join/%23astreinte%3Aagent.tchap.gouv.fr", transport.path);
-        assertEquals("{}", transport.body);
-        assertEquals("tok", transport.token);
+        verify(transport).post("/_matrix/client/v3/join/%23astreinte%3Aagent.tchap.gouv.fr", "tok", "{}");
+        verifyNoMoreInteractions(transport);
     }
 
     @Test
     void whoami_usesGet() {
         api.whoami().toCompletableFuture().join();
 
-        assertEquals("GET", transport.method);
-        assertEquals("/_matrix/client/v3/account/whoami", transport.path);
-        assertEquals("tok", transport.token);
+        verify(transport).get("/_matrix/client/v3/account/whoami", "tok");
+        verifyNoMoreInteractions(transport);
     }
 }

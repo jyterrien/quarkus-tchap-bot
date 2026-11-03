@@ -3,36 +3,54 @@ package fr.gouv.tchap.matrix.core.room;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gouv.tchap.matrix.core.message.DefaultMessageService;
 import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
-import fr.gouv.tchap.matrix.core.transport.RecordingHttpTransport;
+import fr.gouv.tchap.matrix.transport.HttpTransport;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.util.concurrent.CompletableFuture;
+
+import static fr.gouv.tchap.matrix.core.HttpTransportMocks.answeringEmptyJson;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 class DefaultMatrixRoomTest {
 
-    private final RecordingHttpTransport transport = new RecordingHttpTransport();
+    private final HttpTransport transport = answeringEmptyJson();
     private final DefaultMatrixRoom room = new DefaultMatrixRoom("!oncall:s",
         new DefaultMessageService(new MatrixHttpApi(transport, "tok"), () -> "txn1"));
 
+    private void putReturns(String response) {
+        doReturn(CompletableFuture.completedFuture(response)).when(transport).put(any(), any(), any());
+    }
+
     @Test
     void sendText_goesToTheBoundRoomOnly() throws Exception {
-        transport.response = "{\"event_id\":\"$e1\"}";
+        putReturns("{\"event_id\":\"$e1\"}");
 
         String eventId = room.sendText("Base indisponible").toCompletableFuture().join().eventId();
 
         assertEquals("$e1", eventId);
-        assertEquals("PUT", transport.method);
-        assertEquals("/_matrix/client/v3/rooms/%21oncall%3As/send/m.room.message/txn1", transport.path);
-        assertEquals("m.text", new ObjectMapper().readTree(transport.body).path("msgtype").asText());
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(transport).put(
+            eq("/_matrix/client/v3/rooms/%21oncall%3As/send/m.room.message/txn1"),
+            eq("tok"), body.capture());
+        verifyNoMoreInteractions(transport);
+        assertEquals("m.text", new ObjectMapper().readTree(body.getValue()).path("msgtype").asText());
     }
 
     @Test
     void sendNotice_usesNoticeMsgtype() throws Exception {
-        transport.response = "{\"event_id\":\"$e2\"}";
+        putReturns("{\"event_id\":\"$e2\"}");
 
         room.sendNotice("Alerte").toCompletableFuture().join();
 
-        var sent = new ObjectMapper().readTree(transport.body);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(transport).put(any(), any(), body.capture());
+        var sent = new ObjectMapper().readTree(body.getValue());
         assertEquals("m.notice", sent.path("msgtype").asText());
         assertEquals("Alerte", sent.path("body").asText());
     }
