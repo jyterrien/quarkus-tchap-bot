@@ -1,4 +1,4 @@
-package fr.gouv.tchap.quarkus.events;
+package fr.gouv.tchap.quarkus.it;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.vertx.core.Context;
@@ -7,6 +7,9 @@ import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.junit.jupiter.api.Test;
+
+import fr.gouv.tchap.quarkus.events.TchapEventPublisher;
+import fr.gouv.tchap.quarkus.events.TchapMessage;
 
 import java.time.Instant;
 import java.util.HashSet;

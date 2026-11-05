@@ -1,6 +1,7 @@
-package fr.gouv.tchap.quarkus;
+package fr.gouv.tchap.quarkus.it;
 
 import fr.gouv.tchap.matrix.client.MatrixClient;
+import fr.gouv.tchap.quarkus.TchapClient;
 import fr.gouv.tchap.quarkus.config.TchapConfig;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;

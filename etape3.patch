@@ -1,0 +1,374 @@
+diff --git a/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/client/DefaultMatrixClientLifecycleTest.java b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/client/DefaultMatrixClientLifecycleTest.java
+new file mode 100644
+index 0000000..08b877f
+--- /dev/null
++++ b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/client/DefaultMatrixClientLifecycleTest.java
+@@ -0,0 +1,59 @@
++package fr.gouv.tchap.matrix.core.client;
++
++import fr.gouv.tchap.matrix.client.ClientStatus;
++import fr.gouv.tchap.matrix.core.sync.InMemorySyncTokenStore;
++import fr.gouv.tchap.matrix.exception.MatrixException;
++import fr.gouv.tchap.matrix.transport.HttpTransport;
++import org.junit.jupiter.api.Test;
++
++import java.util.concurrent.CompletableFuture;
++
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.scriptedGet;
++import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.Mockito.doReturn;
++import static org.mockito.Mockito.times;
++import static org.mockito.Mockito.verify;
++
++class DefaultMatrixClientLifecycleTest {
++
++    @Test
++    void status_followsTheLifecycle() {
++        HttpTransport transport = scriptedGet("{\"next_batch\":\"s1\"}");
++        DefaultMatrixClient client = new DefaultMatrixClient(transport, "tok", "@bot:s",
++            new InMemorySyncTokenStore(), ev -> {});
++        assertEquals(ClientStatus.NEW, client.status());
++
++        client.start().toCompletableFuture().join();
++        try {
++            assertEquals(ClientStatus.RUNNING, client.status());
++        } finally {
++            client.stop().toCompletableFuture().join();
++        }
++
++        assertEquals(ClientStatus.STOPPED, client.status());
++    }
++
++    @Test
++    void autoJoinFailure_doesNotStopTheClient() {
++        HttpTransport transport = scriptedGet(
++            "{\"next_batch\":\"s1\",\"rooms\":{\"invite\":{\"!invited:s\":{}}}}",
++            "{\"next_batch\":\"s2\"}");
++        doReturn(CompletableFuture.failedFuture(new MatrixException("HTTP 403")))
++            .when(transport).post(any(), any(), any());
++        DefaultMatrixClient client = new DefaultMatrixClient(transport, "tok", "@bot:s",
++            new InMemorySyncTokenStore(), ev -> {}, new MatrixClientOptions(0, 30_000, true));
++
++        client.start().toCompletableFuture().join();
++        try {
++            // le 3e GET n'a lieu que si la boucle a survécu à l'échec du join
++            awaitGets(transport, 3);
++            assertEquals(ClientStatus.RUNNING, client.status());
++        } finally {
++            client.stop().toCompletableFuture().join();
++        }
++
++        verify(transport, times(1)).post(any(), any(), any());
++    }
++}
+diff --git a/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/room/DefaultRoomServiceTest.java b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/room/DefaultRoomServiceTest.java
+index 37a7dbd..b31deaa 100644
+--- a/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/room/DefaultRoomServiceTest.java
++++ b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/room/DefaultRoomServiceTest.java
+@@ -49,4 +49,23 @@ class DefaultRoomServiceTest {
+         verify(transport).post("/_matrix/client/v3/rooms/%21abc%3As/join", "tok", "{}");
+         verifyNoMoreInteractions(transport);
+     }
++
++    @Test
++    void resolveAndJoin_failsWhenResponseIsNotJson() {
++        doReturn(CompletableFuture.completedFuture("<html>oops</html>"))
++            .when(transport).post(any(), any(), any());
++
++        CompletionException ex = assertThrows(CompletionException.class,
++            () -> service.resolveAndJoin("#alias:s").toCompletableFuture().join());
++
++        assertInstanceOf(MatrixException.class, ex.getCause());
++    }
++
++    @Test
++    void leave_postsToTheLeaveEndpoint() {
++        service.leave("!abc:s").toCompletableFuture().join();
++
++        verify(transport).post("/_matrix/client/v3/rooms/%21abc%3As/leave", "tok", "{}");
++        verifyNoMoreInteractions(transport);
++    }
+ }
+diff --git a/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineLifecycleTest.java b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineLifecycleTest.java
+new file mode 100644
+index 0000000..f1b1ad5
+--- /dev/null
++++ b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineLifecycleTest.java
+@@ -0,0 +1,62 @@
++package fr.gouv.tchap.matrix.core.sync;
++
++import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
++import fr.gouv.tchap.matrix.transport.HttpTransport;
++import org.junit.jupiter.api.Test;
++
++import java.util.concurrent.atomic.AtomicInteger;
++
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.getPaths;
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.scriptedGet;
++import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.Mockito.mock;
++
++/** Démarrage, arrêt et redémarrage du moteur. */
++class SyncEngineLifecycleTest {
++
++    @Test
++    void startingTwice_startsASingleLoop() {
++        AtomicInteger schedules = new AtomicInteger();
++        SyncEngine engine = new SyncEngine(new MatrixHttpApi(mock(HttpTransport.class), "tok"),
++            new InMemorySyncTokenStore(), ev -> {}) {
++            @Override
++            void schedule(long delayMs) {
++                schedules.incrementAndGet();   // la boucle ne tourne pas : on compte seulement les démarrages
++            }
++        };
++
++        engine.start().toCompletableFuture().join();
++        engine.start().toCompletableFuture().join();
++        engine.stop().toCompletableFuture().join();
++
++        assertEquals(1, schedules.get());
++    }
++
++    @Test
++    void afterStop_theEngineCanBeStartedAgain() {
++        HttpTransport transport = scriptedGet("{\"next_batch\":\"s1\"}");
++        SyncEngine engine = new SyncEngine(new MatrixHttpApi(transport, "tok"),
++            new InMemorySyncTokenStore(), ev -> {});
++        engine.start().toCompletableFuture().join();
++        awaitGets(transport, 2);
++        engine.stop().toCompletableFuture().join();
++        int beforeRestart = getPaths(transport).size();
++
++        engine.start().toCompletableFuture().join();
++        try {
++            // marge de 3 : une requête déjà en vol à l'arrêt a pu s'ajouter à beforeRestart
++            awaitGets(transport, beforeRestart + 3);
++        } finally {
++            engine.stop().toCompletableFuture().join();
++        }
++    }
++
++    @Test
++    void stopBeforeStart_isHarmless() {
++        SyncEngine engine = new SyncEngine(new MatrixHttpApi(mock(HttpTransport.class), "tok"),
++            new InMemorySyncTokenStore(), ev -> {});
++
++        assertDoesNotThrow(() -> engine.stop().toCompletableFuture().join());
++    }
++}
+diff --git a/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineTokenTest.java b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineTokenTest.java
+new file mode 100644
+index 0000000..bcec2e1
+--- /dev/null
++++ b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineTokenTest.java
+@@ -0,0 +1,92 @@
++package fr.gouv.tchap.matrix.core.sync;
++
++import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
++import fr.gouv.tchap.matrix.sync.SyncTokenStore;
++import fr.gouv.tchap.matrix.transport.HttpTransport;
++import org.junit.jupiter.api.Test;
++
++import java.util.List;
++import java.util.Optional;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.CopyOnWriteArrayList;
++import java.util.function.Consumer;
++
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.getPaths;
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.scriptedGet;
++import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.Mockito.doAnswer;
++import static org.mockito.Mockito.doReturn;
++import static org.mockito.Mockito.mock;
++
++/** Persistance du token de synchronisation (next_batch) par le moteur. */
++class SyncEngineTokenTest {
++
++    private static String withEvent(String nextBatch, String eventId) {
++        return "{\"next_batch\":\"" + nextBatch + "\",\"rooms\":{\"join\":{\"!r:s\":{\"timeline\":{\"events\":["
++            + "{\"event_id\":\"" + eventId + "\",\"sender\":\"@u:s\",\"type\":\"m.room.message\","
++            + "\"origin_server_ts\":1,\"content\":{}}]}}}}}";
++    }
++
++    /** Store vide dont load() réussit ; save() est à configurer par le test. */
++    private static SyncTokenStore emptyStore() {
++        SyncTokenStore store = mock(SyncTokenStore.class);
++        doReturn(CompletableFuture.completedFuture(Optional.empty())).when(store).load();
++        return store;
++    }
++
++    private static void run(SyncTokenStore store, Consumer<fr.gouv.tchap.matrix.event.MatrixEvent> events,
++                            HttpTransport transport, int gets) {
++        SyncEngine engine = new SyncEngine(new MatrixHttpApi(transport, "tok"), store, events);
++        engine.start().toCompletableFuture().join();
++        try {
++            awaitGets(transport, gets);
++        } finally {
++            engine.stop().toCompletableFuture().join();
++        }
++    }
++
++    @Test
++    void token_isSavedOnlyAfterTheEventsOfTheResponseAreDelivered() {
++        List<String> trace = new CopyOnWriteArrayList<>();
++        SyncTokenStore store = emptyStore();
++        doAnswer(invocation -> {
++            trace.add("save:" + invocation.getArgument(0));
++            return CompletableFuture.completedFuture(null);
++        }).when(store).save(any());
++        HttpTransport transport = scriptedGet(withEvent("s1", "$e1"), "{\"next_batch\":\"s2\"}");
++
++        run(store, ev -> trace.add("event:" + ev.eventId()), transport, 2);
++
++        // at-least-once : si l'application s'arrête pendant la livraison, le token n'est pas encore avancé
++        assertEquals(List.of("event:$e1", "save:s1"), List.copyOf(trace).subList(0, 2));
++    }
++
++    @Test
++    void aFailingTokenSave_doesNotStopTheLoop_andTheNextRequestStillAdvances() {
++        SyncTokenStore store = emptyStore();
++        doReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")))
++            .doReturn(CompletableFuture.completedFuture(null))
++            .when(store).save(any());
++        HttpTransport transport = scriptedGet("{\"next_batch\":\"s1\"}", "{\"next_batch\":\"s2\"}");
++
++        run(store, ev -> {}, transport, 3);
++
++        List<String> paths = getPaths(transport);
++        assertTrue(paths.get(1).contains("since=s1"), paths.get(1));
++        assertTrue(paths.get(2).contains("since=s2"), paths.get(2));
++    }
++
++    @Test
++    void responseWithoutNextBatch_doesNotAdvanceTheToken() {
++        SyncTokenStore store = emptyStore();
++        doReturn(CompletableFuture.completedFuture(null)).when(store).save(any());
++        HttpTransport transport = scriptedGet("{}", "{\"next_batch\":\"s1\"}");
++
++        run(store, ev -> {}, transport, 2);
++
++        String secondRequest = getPaths(transport).get(1);
++        assertFalse(secondRequest.contains("since="), secondRequest);
++    }
++}
+diff --git a/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEventParserTest.java b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEventParserTest.java
+new file mode 100644
+index 0000000..105bb6a
+--- /dev/null
++++ b/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEventParserTest.java
+@@ -0,0 +1,109 @@
++package fr.gouv.tchap.matrix.core.sync;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import fr.gouv.tchap.matrix.event.MatrixEvent;
++import org.junit.jupiter.api.Test;
++
++import java.time.Instant;
++import java.util.List;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++/** Extraction du token et des événements ; les invitations sont dans {@link SyncEventParserInviteTest}. */
++class SyncEventParserTest {
++
++    private final SyncEventParser parser = new SyncEventParser(new ObjectMapper());
++
++    private static String syncWithJoin(String joinBody) {
++        return "{\"next_batch\":\"s1\",\"rooms\":{\"join\":{" + joinBody + "}}}";
++    }
++
++    private static String room(String roomId, String eventsJson) {
++        return "\"" + roomId + "\":{\"timeline\":{\"events\":" + eventsJson + "}}";
++    }
++
++    @Test
++    void extractNextBatch_returnsTheToken() {
++        assertEquals("s72_9", parser.extractNextBatch("{\"next_batch\":\"s72_9\"}"));
++    }
++
++    @Test
++    void extractNextBatch_isNullWhenAbsent() {
++        assertNull(parser.extractNextBatch("{}"));
++    }
++
++    @Test
++    void parseEvents_mapsAllFieldsOfAnEvent() {
++        String json = syncWithJoin(room("!r:s", "[{\"event_id\":\"$e1\",\"sender\":\"@u:s\","
++            + "\"type\":\"m.room.message\",\"origin_server_ts\":1700000000000,"
++            + "\"content\":{\"msgtype\":\"m.text\",\"body\":\"hi\"}}]"));
++
++        List<MatrixEvent> events = parser.parseEvents(json);
++
++        assertEquals(List.of(new MatrixEvent("$e1", "!r:s", "@u:s", "m.room.message",
++            "{\"msgtype\":\"m.text\",\"body\":\"hi\"}", Instant.ofEpochMilli(1_700_000_000_000L))), events);
++    }
++
++    @Test
++    void parseEvents_skipsEventsWithoutEventId() {
++        String json = syncWithJoin(room("!r:s",
++            "[{\"sender\":\"@u:s\",\"type\":\"m.room.message\",\"content\":{}},"
++                + "{\"event_id\":\"$ok\",\"sender\":\"@u:s\",\"type\":\"m.room.message\",\"content\":{}}]"));
++
++        List<MatrixEvent> events = parser.parseEvents(json);
++
++        assertEquals(List.of("$ok"), events.stream().map(MatrixEvent::eventId).toList());
++    }
++
++    @Test
++    void parseEvents_missingTimestamp_defaultsToTheEpoch() {
++        String json = syncWithJoin(room("!r:s",
++            "[{\"event_id\":\"$e1\",\"sender\":\"@u:s\",\"type\":\"m.room.message\",\"content\":{}}]"));
++
++        assertEquals(Instant.EPOCH, parser.parseEvents(json).get(0).timestamp());
++    }
++
++    @Test
++    void parseEvents_returnsTheEventsOfEveryJoinedRoom_inServerOrder() {
++        String json = syncWithJoin(
++            room("!a:s", "[{\"event_id\":\"$e1\",\"content\":{}}]") + ","
++                + room("!b:s", "[{\"event_id\":\"$e2\",\"content\":{}}]"));
++
++        List<MatrixEvent> events = parser.parseEvents(json);
++
++        assertEquals(List.of("$e1", "$e2"), events.stream().map(MatrixEvent::eventId).toList());
++        assertEquals(List.of("!a:s", "!b:s"), events.stream().map(MatrixEvent::roomId).toList());
++    }
++
++    @Test
++    void parseEvents_ignoresRoomsWhoseTimelineHasNoEventArray() {
++        String json = "{\"rooms\":{\"join\":{\"!a:s\":{\"timeline\":{\"events\":{}}},\"!b:s\":{}}}}";
++
++        assertTrue(parser.parseEvents(json).isEmpty());
++    }
++
++    @Test
++    void parseEvents_ignoresInvitedRooms() {
++        String json = "{\"rooms\":{\"invite\":{\"!i:s\":{\"invite_state\":{\"events\":["
++            + "{\"event_id\":\"$x\",\"type\":\"m.room.member\",\"content\":{}}]}}}}}";
++
++        assertTrue(parser.parseEvents(json).isEmpty());
++    }
++
++    @Test
++    void parseEvents_withoutRoomsSection_returnsNothing() {
++        assertTrue(parser.parseEvents("{\"next_batch\":\"s1\"}").isEmpty());
++    }
++
++    @Test
++    void invalidJson_isRejectedByEveryMethod() {
++        String invalid = "{";
++
++        assertEquals("Invalid /sync response",
++            assertThrows(RuntimeException.class, () -> parser.extractNextBatch(invalid)).getMessage());
++        assertEquals("Invalid /sync response",
++            assertThrows(RuntimeException.class, () -> parser.parseEvents(invalid)).getMessage());
++        assertEquals("Invalid /sync response",
++            assertThrows(RuntimeException.class, () -> parser.parseInvitedRoomIds(invalid)).getMessage());
++    }
++}
