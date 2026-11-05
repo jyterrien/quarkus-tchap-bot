@@ -49,4 +49,23 @@ class DefaultRoomServiceTest {
         verify(transport).post("/_matrix/client/v3/rooms/%21abc%3As/join", "tok", "{}");
         verifyNoMoreInteractions(transport);
     }
+
+    @Test
+    void resolveAndJoin_failsWhenResponseIsNotJson() {
+        doReturn(CompletableFuture.completedFuture("<html>oops</html>"))
+            .when(transport).post(any(), any(), any());
+
+        CompletionException ex = assertThrows(CompletionException.class,
+            () -> service.resolveAndJoin("#alias:s").toCompletableFuture().join());
+
+        assertInstanceOf(MatrixException.class, ex.getCause());
+    }
+
+    @Test
+    void leave_postsToTheLeaveEndpoint() {
+        service.leave("!abc:s").toCompletableFuture().join();
+
+        verify(transport).post("/_matrix/client/v3/rooms/%21abc%3As/leave", "tok", "{}");
+        verifyNoMoreInteractions(transport);
+    }
 }

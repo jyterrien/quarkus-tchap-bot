@@ -4,6 +4,8 @@ import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
 import org.junit.jupiter.api.Test;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
@@ -17,6 +19,10 @@ class SyncEngineInitialSyncTest {
     /** Réponses /sync successives : next_batch s1 puis s2 (répété). */
     private static HttpTransport syncTransport() {
         return scriptedGet("{\"next_batch\":\"s1\"}", "{\"next_batch\":\"s2\"}");
+    }
+
+    private static String decoded(String path) {
+        return URLDecoder.decode(path, StandardCharsets.UTF_8);
     }
 
     @Test
@@ -38,7 +44,7 @@ class SyncEngineInitialSyncTest {
         List<String> paths = getPaths(transport);
         String first = paths.get(0);
         String second = paths.get(1);
-        assertTrue(first.contains("filter="), first);
+        assertTrue(decoded(first).contains("\"timeline\":{\"limit\":0}"), "premier /sync sans historique : " + decoded(first));
         assertFalse(first.contains("since="), first);
         assertTrue(second.contains("since=s1"), second);
         assertFalse(second.contains("filter="), second);

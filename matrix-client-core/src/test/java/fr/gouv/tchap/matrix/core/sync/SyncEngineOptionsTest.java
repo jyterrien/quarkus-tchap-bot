@@ -1,11 +1,13 @@
 package fr.gouv.tchap.matrix.core.sync;
 
 import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
+import fr.gouv.tchap.matrix.event.MatrixEvent;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
@@ -19,11 +21,21 @@ class SyncEngineOptionsTest {
     private static final String WITH_INVITE =
         "{\"next_batch\":\"s1\",\"rooms\":{\"invite\":{\"!invited:s\":{\"invite_state\":{\"events\":[]}}}}}";
     private static final String PLAIN = "{\"next_batch\":\"s2\"}";
+    private static final String WITH_INVITE_AND_EVENT =
+        "{\"next_batch\":\"s1\",\"rooms\":{"
+            + "\"invite\":{\"!invited:s\":{\"invite_state\":{\"events\":[]}}},"
+            + "\"join\":{\"!r:s\":{\"timeline\":{\"events\":[{\"event_id\":\"$e1\",\"sender\":\"@u:s\","
+            + "\"type\":\"m.room.message\",\"origin_server_ts\":1,\"content\":{}}]}}}}}";
 
     private static void run(HttpTransport transport, int callsToWait,
                             Consumer<String> inviteConsumer, long timeoutMs) {
+        run(transport, callsToWait, ev -> {}, inviteConsumer, timeoutMs);
+    }
+
+    private static void run(HttpTransport transport, int callsToWait, Consumer<MatrixEvent> eventConsumer,
+                            Consumer<String> inviteConsumer, long timeoutMs) {
         SyncEngine engine = new SyncEngine(new MatrixHttpApi(transport, "tok"),
-            new InMemorySyncTokenStore(), ev -> {}, inviteConsumer, 0, timeoutMs);
+            new InMemorySyncTokenStore(), eventConsumer, inviteConsumer, 0, timeoutMs);
         engine.start().toCompletableFuture().join();
         try {
             awaitGets(transport, callsToWait);
@@ -53,18 +65,25 @@ class SyncEngineOptionsTest {
 
     @Test
     void inviteConsumerException_doesNotStopTheLoop() {
+        AtomicInteger invoked = new AtomicInteger();
         HttpTransport transport = scriptedGet(WITH_INVITE, PLAIN);
 
-        run(transport, 3, roomId -> { throw new IllegalStateException("boom"); }, 30_000);
+        // 3 GET attendus : le 3e n'a lieu que si la boucle a survécu à l'exception du consumer
+        run(transport, 3, roomId -> {
+            invoked.incrementAndGet();
+            throw new IllegalStateException("boom");
+        }, 30_000);
 
-        assertTrue(getPaths(transport).size() >= 3);
+        assertEquals(1, invoked.get());
     }
 
     @Test
-    void invitationsAreIgnored_whenNoInviteConsumer() {
-        HttpTransport transport = scriptedGet(WITH_INVITE, PLAIN);
+    void withoutInviteConsumer_invitationsAreSkipped_andEventsAreStillDelivered() {
+        List<String> delivered = new CopyOnWriteArrayList<>();
 
-        assertDoesNotThrow(() -> run(transport, 2, null, 30_000));
+        run(scriptedGet(WITH_INVITE_AND_EVENT, PLAIN), 2, ev -> delivered.add(ev.eventId()), null, 30_000);
+
+        assertEquals(List.of("$e1"), delivered);
     }
 
     @Test

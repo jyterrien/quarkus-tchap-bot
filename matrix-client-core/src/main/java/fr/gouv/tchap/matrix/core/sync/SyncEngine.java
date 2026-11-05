@@ -157,7 +157,8 @@ public class SyncEngine {
         return CompletableFuture.completedFuture(null);
     }
 
-    private void schedule(long delayMs) {
+    /** Visible pour les tests : permet d'observer le délai demandé sans attendre réellement. */
+    void schedule(long delayMs) {
         if (!running.get()) return;
         try {
             executor.schedule(this::doSync, delayMs, TimeUnit.MILLISECONDS);

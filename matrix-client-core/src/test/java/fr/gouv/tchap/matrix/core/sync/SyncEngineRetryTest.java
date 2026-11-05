@@ -7,14 +7,11 @@ import fr.gouv.tchap.matrix.transport.HttpTransport;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
+import static fr.gouv.tchap.matrix.core.HttpTransportMocks.scriptedGet;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
 
 class SyncEngineRetryTest {
 
@@ -36,28 +33,37 @@ class SyncEngineRetryTest {
         assertEquals(5_000, SyncEngine.retryDelayMs(new RuntimeException("boom")));
     }
 
-    @Test
-    void afterARateLimit_engineRetriesAfterTheServerDelay_notTheDefaultFiveSeconds() {
-        List<Long> callTimes = new CopyOnWriteArrayList<>();
-        HttpTransport transport = mock(HttpTransport.class);
-        doAnswer(invocation -> {
-            callTimes.add(System.nanoTime());
-            return callTimes.size() == 1
-                ? CompletableFuture.<String>failedFuture(new RateLimitException("HTTP 429", 1_000))
-                : CompletableFuture.completedFuture("{\"next_batch\":\"s1\"}");
-        }).when(transport).get(any(), any());
-
+    /**
+     * Délais demandés au planificateur par le moteur : le premier est le démarrage (0), le second
+     * est le délai de retry choisi après l'échec. Le délai n'est pas attendu : on relance aussitôt.
+     */
+    private static List<Long> schedulesAfter(Throwable failure) {
+        List<Long> delays = new CopyOnWriteArrayList<>();
+        HttpTransport transport = scriptedGet(failure, "{\"next_batch\":\"s1\"}");
         SyncEngine engine = new SyncEngine(new MatrixHttpApi(transport, "tok"),
-            new InMemorySyncTokenStore(), ev -> {});
+            new InMemorySyncTokenStore(), ev -> {}) {
+            @Override
+            void schedule(long delayMs) {
+                delays.add(delayMs);
+                super.schedule(0);
+            }
+        };
         engine.start().toCompletableFuture().join();
         try {
-            awaitGets(transport, 2, 10_000);
+            awaitGets(transport, 2);
         } finally {
             engine.stop().toCompletableFuture().join();
         }
+        return List.copyOf(delays).subList(0, 2);
+    }
 
-        long gapMs = (callTimes.get(1) - callTimes.get(0)) / 1_000_000;
-        assertTrue(gapMs >= 900, "le délai du serveur (1 s) doit être respecté, écart = " + gapMs + " ms");
-        assertTrue(gapMs < 3_500, "ce ne doit pas être le délai par défaut de 5 s, écart = " + gapMs + " ms");
+    @Test
+    void afterARateLimit_engineSchedulesTheRetryWithTheServerDelay() {
+        assertEquals(List.of(0L, 7_000L), schedulesAfter(new RateLimitException("HTTP 429", 7_000)));
+    }
+
+    @Test
+    void afterAnotherError_engineSchedulesTheRetryWithTheFixedFiveSecondDelay() {
+        assertEquals(List.of(0L, 5_000L), schedulesAfter(new MatrixException("HTTP 500")));
     }
 }
