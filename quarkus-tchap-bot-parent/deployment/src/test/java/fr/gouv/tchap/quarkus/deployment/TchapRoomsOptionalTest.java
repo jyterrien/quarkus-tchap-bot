@@ -1,4 +1,4 @@
-package fr.gouv.tchap.quarkus.it;
+package fr.gouv.tchap.quarkus.deployment;
 
 import fr.gouv.tchap.quarkus.rooms.TchapRoom;
 import fr.gouv.tchap.quarkus.rooms.TchapRoomName;

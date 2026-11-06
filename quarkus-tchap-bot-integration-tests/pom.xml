@@ -21,15 +21,27 @@
             <groupId>fr.gouv.tchap</groupId>
             <artifactId>quarkus-tchap-bot</artifactId>
         </dependency>
+        <!--
+            Impose l'ordre du reactor (le deployment est construit avant ce module, y compris avec
+            « -pl ... -am ») sans l'ajouter au classpath : type pom, portée test, aucune transitive.
+            Quarkus retrouve le deployment tout seul via le descripteur de l'extension.
+        -->
+        <dependency>
+            <groupId>fr.gouv.tchap</groupId>
+            <artifactId>quarkus-tchap-bot-deployment</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit5</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- Tests -->
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-junit5-internal</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -45,6 +57,17 @@
                 </configuration>
             </plugin>
 
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                        <maven.home>${maven.home}</maven.home>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
 
             <plugin>
                 <groupId>io.quarkus</groupId>

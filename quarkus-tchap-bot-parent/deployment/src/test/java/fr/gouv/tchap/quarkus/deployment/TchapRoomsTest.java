@@ -1,4 +1,4 @@
-package fr.gouv.tchap.quarkus.it;
+package fr.gouv.tchap.quarkus.deployment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

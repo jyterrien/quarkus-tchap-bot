@@ -1,4 +1,4 @@
-package fr.gouv.tchap.quarkus.it;
+package fr.gouv.tchap.quarkus.deployment;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
