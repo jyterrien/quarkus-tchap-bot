@@ -106,4 +106,58 @@ class SyncEventParserTest {
         assertEquals("Invalid /sync response",
             assertThrows(RuntimeException.class, () -> parser.parseInvitedRoomIds(invalid)).getMessage());
     }
+
+    // ---- threads ------------------------------------------------------------------------------
+
+    private List<MatrixEvent> parseOneEventWithContent(String contentJson) {
+        return parser.parseEvents(syncWithJoin(room("!r:s",
+            "[{\"event_id\":\"$e1\",\"sender\":\"@u:s\",\"type\":\"m.room.message\","
+                + "\"content\":" + contentJson + "}]")));
+    }
+
+    @Test
+    void parseEvents_threadReply_exposesTheThreadRoot() {
+        List<MatrixEvent> events = parseOneEventWithContent(
+            "{\"msgtype\":\"m.text\",\"body\":\"re\",\"m.relates_to\":{\"rel_type\":\"m.thread\","
+                + "\"event_id\":\"$root\",\"is_falling_back\":true,"
+                + "\"m.in_reply_to\":{\"event_id\":\"$root\"}}}");
+
+        assertEquals("$root", events.get(0).threadRootId());
+        assertTrue(events.get(0).isInThread());
+    }
+
+    @Test
+    void parseEvents_plainMessage_isNotInAThread() {
+        MatrixEvent event = parseOneEventWithContent("{\"msgtype\":\"m.text\",\"body\":\"hi\"}").get(0);
+
+        assertNull(event.threadRootId());
+        assertFalse(event.isInThread());
+    }
+
+    @Test
+    void parseEvents_otherRelations_areNotThreads() {
+        // réponse simple (sans rel_type), édition et réaction : aucune n'est un thread
+        assertNull(parseOneEventWithContent(
+            "{\"m.relates_to\":{\"m.in_reply_to\":{\"event_id\":\"$x\"}}}").get(0).threadRootId());
+        assertNull(parseOneEventWithContent(
+            "{\"m.relates_to\":{\"rel_type\":\"m.replace\",\"event_id\":\"$x\"}}").get(0).threadRootId());
+        assertNull(parseOneEventWithContent(
+            "{\"m.relates_to\":{\"rel_type\":\"m.annotation\",\"event_id\":\"$x\"}}").get(0).threadRootId());
+    }
+
+    @Test
+    void parseEvents_malformedThreadRelation_isIgnored() {
+        assertNull(parseOneEventWithContent(
+            "{\"m.relates_to\":{\"rel_type\":\"m.thread\"}}").get(0).threadRootId());
+        assertNull(parseOneEventWithContent(
+            "{\"m.relates_to\":{\"rel_type\":\"m.thread\",\"event_id\":42}}").get(0).threadRootId());
+        assertNull(parseOneEventWithContent("{\"m.relates_to\":\"oops\"}").get(0).threadRootId());
+    }
+
+    @Test
+    void threadRoot_doesNotAffectTheSixArgumentConstructor() {
+        MatrixEvent event = new MatrixEvent("$e", "!r:s", "@u:s", "m.room.message", "{}", Instant.EPOCH);
+
+        assertNull(event.threadRootId());
+    }
 }

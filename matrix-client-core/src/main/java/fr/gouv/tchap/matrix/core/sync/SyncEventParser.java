@@ -39,6 +39,18 @@ public class SyncEventParser {
         }
     }
 
+    /**
+     * Racine du thread d'un événement : {@code content.m.relates_to.event_id} quand
+     * {@code rel_type} vaut {@code m.thread}. Les autres relations (réponse simple, édition,
+     * réaction) ne sont pas des threads. Null si absent.
+     */
+    private static String threadRootOf(JsonNode content) {
+        JsonNode relatesTo = content.path("m.relates_to");
+        if (!"m.thread".equals(relatesTo.path("rel_type").asText(null))) return null;
+        JsonNode root = relatesTo.path("event_id");
+        return root.isTextual() && !root.asText().isBlank() ? root.asText() : null;
+    }
+
     public List<MatrixEvent> parseEvents(String json) {
         List<MatrixEvent> events = new ArrayList<>();
         try {
@@ -56,14 +68,15 @@ public class SyncEventParser {
                     String sender = ev.path("sender").asText(null);
                     String type = ev.path("type").asText(null);
                     long ts = ev.path("origin_server_ts").asLong(0L);
-                    String content = ev.path("content").toString();
+                    JsonNode content = ev.path("content");
                     events.add(new MatrixEvent(
                         eventId,
                         roomId,
                         sender,
                         type,
-                        content,
-                        Instant.ofEpochMilli(ts)
+                        content.toString(),
+                        Instant.ofEpochMilli(ts),
+                        threadRootOf(content)
                     ));
                 }
             });

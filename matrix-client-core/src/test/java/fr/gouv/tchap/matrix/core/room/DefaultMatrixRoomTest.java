@@ -65,4 +65,35 @@ class DefaultMatrixRoomTest {
         assertThrows(IllegalArgumentException.class, () -> new DefaultMatrixRoom(" ", null));
         assertThrows(IllegalArgumentException.class, () -> new DefaultMatrixRoom(null, null));
     }
+
+    @Test
+    void sendTextInThread_goesToTheBoundRoomWithTheThreadRelation() throws Exception {
+        putReturns("{\"event_id\":\"$e3\"}");
+
+        String eventId = room.sendTextInThread("$root", "Suite").toCompletableFuture().join().eventId();
+
+        assertEquals("$e3", eventId);
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(transport).put(
+            eq("/_matrix/client/v3/rooms/%21oncall%3As/send/m.room.message/txn1"),
+            eq("tok"), body.capture());
+        verifyNoMoreInteractions(transport);
+        var sent = new ObjectMapper().readTree(body.getValue());
+        assertEquals("m.text", sent.path("msgtype").asText());
+        assertEquals("m.thread", sent.path("m.relates_to").path("rel_type").asText());
+        assertEquals("$root", sent.path("m.relates_to").path("event_id").asText());
+    }
+
+    @Test
+    void sendNoticeInThread_usesNoticeMsgtypeAndThreadRelation() throws Exception {
+        putReturns("{\"event_id\":\"$e4\"}");
+
+        room.sendNoticeInThread("$root", "Alerte").toCompletableFuture().join();
+
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(transport).put(any(), any(), body.capture());
+        var sent = new ObjectMapper().readTree(body.getValue());
+        assertEquals("m.notice", sent.path("msgtype").asText());
+        assertEquals("$root", sent.path("m.relates_to").path("event_id").asText());
+    }
 }

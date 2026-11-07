@@ -36,6 +36,16 @@ public final class DefaultMatrixRoom implements MatrixRoom {
     }
 
     @Override
+    public CompletionStage<MessageReceipt> sendTextInThread(String threadRootId, String body) {
+        return messages.sendTextInThread(roomId, threadRootId, body);
+    }
+
+    @Override
+    public CompletionStage<MessageReceipt> sendNoticeInThread(String threadRootId, String body) {
+        return messages.sendNoticeInThread(roomId, threadRootId, body);
+    }
+
+    @Override
     public String toString() {
         return "MatrixRoom[" + roomId + "]";
     }
