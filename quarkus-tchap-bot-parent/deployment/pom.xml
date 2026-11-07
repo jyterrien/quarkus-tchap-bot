@@ -13,6 +13,11 @@
     <artifactId>quarkus-tchap-bot-deployment</artifactId>
     <name>Quarkus Tchap Bot - Deployment</name>
 
+    <properties>
+        <!-- Non géré par le BOM Quarkus : à épingler ici -->
+        <wiremock.version>3.13.2</wiremock.version>
+    </properties>
+
     <dependencies>
         <!-- Le runtime de l'extension (obligatoire) -->
         <dependency>
@@ -41,6 +46,14 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit5-internal</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Faux homeserver Matrix : variante « standalone », ses dépendances (Jetty, Jackson) sont embarquées
+             et ne rentrent pas en conflit avec celles de Quarkus -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>${wiremock.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

@@ -29,12 +29,13 @@ import jakarta.inject.Singleton;
  */
 class TchapRoomsTest {
 
-    static final FakeHomeserver SERVER = FakeHomeserver.startOrReuse(
-            FakeHomeserver.syncWith(
+    static final FakeHomeserver SERVER = FakeHomeserver.forTest(TchapRoomsTest.class, hs -> hs
+            .join("#oncall:s", "!oncall:s")
+            .join("!supervisors:s", "!supervisors:s")
+            .firstSync(FakeHomeserver.syncWith(
                     new String[] { "!oncall:s", "$e1", "from-oncall" },
                     new String[] { "!supervisors:s", "$e2", "from-supervisors" },
-                    new String[] { "!other:s", "$e3", "from-other" }),
-            Set.of());
+                    new String[] { "!other:s", "$e3", "from-other" })));
 
     @RegisterExtension
     static final QuarkusUnitTest TEST = new QuarkusUnitTest()
@@ -73,9 +74,7 @@ class TchapRoomsTest {
 
     @AfterAll
     static void stopServer() {
-        if (SERVER.isOwner()) {
-            SERVER.close();
-        }
+        SERVER.close();
     }
 
     @Test
@@ -93,15 +92,13 @@ class TchapRoomsTest {
         app.oncall.sendText("Base indisponible").toCompletableFuture().join();
         FakeHomeserver.await(() -> !SERVER.sends().isEmpty());
 
-        for (String s : SERVER.sends()) {
-            System.out.println("[TEST send] len=" + s.length() + " value=«" + s + "»");
-        }
-
         assertTrue(
                 SERVER.sends().stream().anyMatch(
                         s -> s.contains("/rooms/%21oncall%3As/send/") || s.contains("/rooms/!oncall:s/send/")),
                 "sends=" + SERVER.sends());
         assertTrue(SERVER.sends().stream().noneMatch(s -> s.contains("supervisors")),
+                "sends=" + SERVER.sends());
+        assertTrue(SERVER.sends().stream().anyMatch(s -> s.contains("\"body\":\"Base indisponible\"")),
                 "sends=" + SERVER.sends());
     }
 
@@ -110,7 +107,6 @@ class TchapRoomsTest {
         FakeHomeserver.await(() -> !SERVER.syncPaths().isEmpty());
 
         String firstSync = SERVER.syncPaths().get(0);
-        System.out.println("[TEST sync] len=" + firstSync.length() + " value=«" + firstSync + "»");
 
         assertTrue(firstSync.contains("!oncall:s"), firstSync);
         assertFalse(firstSync.contains("!other:s"), firstSync);

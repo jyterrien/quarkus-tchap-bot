@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -22,9 +21,10 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class TchapRoomsOptionalTest {
 
-    static final FakeHomeserver SERVER = FakeHomeserver.startOrReuse(
-        "{\"next_batch\":\"s1\"}",
-        Set.of("!gone:s"));
+    static final FakeHomeserver SERVER = FakeHomeserver.forTest(TchapRoomsOptionalTest.class, hs -> hs
+        .firstSync("{\"next_batch\":\"s1\"}")
+        .join("!ok:s", "!ok:s")
+        .joinForbidden("!gone:s"));
 
     @RegisterExtension
     static final QuarkusUnitTest TEST = new QuarkusUnitTest()
@@ -49,9 +49,7 @@ class TchapRoomsOptionalTest {
 
     @AfterAll
     static void stopServer() {
-        if (SERVER.isOwner()) {
-            SERVER.close();
-        }
+        SERVER.close();
     }
 
     @Test
