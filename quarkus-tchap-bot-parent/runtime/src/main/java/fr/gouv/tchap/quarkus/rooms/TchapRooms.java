@@ -4,7 +4,6 @@ import fr.gouv.tchap.matrix.client.MatrixClient;
 import fr.gouv.tchap.quarkus.config.TchapConfig;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
@@ -40,15 +39,9 @@ public class TchapRooms {
     @Inject
     MatrixClient client;
 
-    /**
-     * Fourni par le processeur de l'extension (bean synthétique). Absent quand le
-     * runtime est exécuté
-     * comme une simple application, sans phase de build de l'extension
-     * (ex. @QuarkusTest du module runtime) :
-     * dans ce cas aucun nom injecté n'est connu et on ne valide rien.
-     */
+    /** Noms de salons injectés dans l'application : bean synthétique toujours produit par le processeur. */
     @Inject
-    Instance<InjectedRoomNames> injected;
+    InjectedRoomNames injected;
 
     /**
      * Un TchapRoom par salon configuré, créé dès l'instanciation : jamais modifié
@@ -59,7 +52,6 @@ public class TchapRooms {
 
     @PostConstruct
     void init() {
-        LOG.infof("TchapRooms @PostConstruct: rooms=%s", config.rooms().keySet());
         config.rooms().keySet().forEach(name -> handles.put(name, new TchapRoom(name)));
     }
 
@@ -100,9 +92,6 @@ public class TchapRooms {
      *                               ou si un salon requis ne peut pas être rejoint
      */
     public boolean initialize() {
-        LOG.infof("initialize(): injectedNames=%s configuredRooms=%s",
-                injected.isResolvable() ? injected.get().names() : "<absent>",
-                config.rooms().keySet());
         validateInjectedNames();
         if (handles.isEmpty())
             return true;
@@ -159,8 +148,7 @@ public class TchapRooms {
     }
 
     private void validateInjectedNames() {
-        Set<String> injectedNames = injected.isResolvable() ? injected.get().names() : Set.of();
-        Set<String> missing = new TreeSet<>(injectedNames);
+        Set<String> missing = new TreeSet<>(injected.names());
         missing.removeAll(handles.keySet());
         if (!missing.isEmpty()) {
             throw new IllegalStateException(unknownRoomMessage(missing.iterator().next())
