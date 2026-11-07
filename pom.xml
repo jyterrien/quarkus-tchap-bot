@@ -15,7 +15,7 @@
         <!-- <maven.deploy.skip>true</maven.deploy.skip> -->
 
         <argLine></argLine>
-        <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
@@ -23,7 +23,9 @@
         <jackson.version>2.17.2</jackson.version>
         <vertx.version>4.5.10</vertx.version>
         <junit.version>5.10.2</junit.version>
-        <mockito.version>5.11.0</mockito.version>
+        <!-- >= 5.20 / Byte Buddy >= 1.17.7 : requis pour que le mock-maker inline lise les classes Java 25 -->
+        <mockito.version>5.20.0</mockito.version>
+        <byte-buddy.version>1.17.7</byte-buddy.version>
     </properties>
 
     <modules>
@@ -39,6 +41,24 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Déclarées AVANT le BOM Quarkus : une entrée directe l'emporte sur un BOM importé,
+                 qui sinon imposerait ses propres versions (Byte Buddy trop ancien pour Java 25). -->
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy</artifactId>
+                <version>${byte-buddy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy-agent</artifactId>
+                <version>${byte-buddy.version}</version>
+            </dependency>
+
             <!-- BOM Quarkus -->
             <dependency>
                 <groupId>io.quarkus.platform</groupId>
