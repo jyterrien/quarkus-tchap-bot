@@ -18,7 +18,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import fr.gouv.tchap.quarkus.events.TchapMessage;
 import fr.gouv.tchap.quarkus.rooms.TchapRoom;
 import fr.gouv.tchap.quarkus.rooms.TchapRoomName;
-import io.quarkus.test.QuarkusUnitTest;
+import io.quarkus.test.QuarkusExtensionTest;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -38,7 +38,7 @@ class TchapRoomsTest {
                     new String[] { "!other:s", "$e3", "from-other" })));
 
     @RegisterExtension
-    static final QuarkusUnitTest TEST = new QuarkusUnitTest()
+    static final QuarkusExtensionTest TEST = new QuarkusExtensionTest()
             .withApplicationRoot(jar -> jar
                     .addClasses(App.class, FakeHomeserver.class)
                     .addAsResource(new StringAsset(

@@ -3,7 +3,7 @@ package fr.gouv.tchap.quarkus.deployment;
 import fr.gouv.tchap.quarkus.rooms.TchapRoom;
 import fr.gouv.tchap.quarkus.rooms.TchapRoomName;
 import io.quarkus.runtime.Startup;
-import io.quarkus.test.QuarkusUnitTest;
+import io.quarkus.test.QuarkusExtensionTest;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jboss.shrinkwrap.api.asset.StringAsset;
@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TchapRoomsMissingConfigTest {
 
     @RegisterExtension
-    static final QuarkusUnitTest TEST = new QuarkusUnitTest()
+    static final QuarkusExtensionTest TEST = new QuarkusExtensionTest()
         .withApplicationRoot(jar -> jar
             .addClasses(Consumer.class)
             .addAsResource(new StringAsset(
