@@ -58,7 +58,8 @@ public class SyncEventParser {
             JsonNode join = root.path("rooms").path("join");
             if (join.isMissingNode()) return events;
 
-            join.fields().forEachRemaining(roomEntry -> {
+            join.properties().forEach(    
+                roomEntry -> {
                 String roomId = roomEntry.getKey();
                 JsonNode timeline = roomEntry.getValue().path("timeline").path("events");
                 if (!timeline.isArray()) return;
