@@ -5,8 +5,6 @@ import fr.gouv.tchap.quarkus.config.TchapConfig;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.jboss.logging.Logger;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -20,144 +18,148 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import org.jboss.logging.Logger;
 
 /**
  * Registre des salons nommés : crée les TchapRoom, les fait rejoindre au
- * démarrage,
- * restreint la synchronisation à ces salons et indique à quel nom correspond un
- * événement.
+ * démarrage, restreint la synchronisation à ces salons et indique à quel nom
+ * correspond un événement.
  */
 @ApplicationScoped
 public class TchapRooms {
 
-    private static final Logger LOG = Logger.getLogger(TchapRooms.class);
-    private static final long JOIN_TIMEOUT_SEC = 30;
+	private static final Logger LOG = Logger.getLogger(TchapRooms.class);
+	private static final long JOIN_TIMEOUT_SEC = 30;
 
-    @Inject
-    TchapConfig config;
+	@Inject
+	TchapConfig config;
 
-    @Inject
-    MatrixClient client;
+	@Inject
+	MatrixClient client;
 
-    /** Noms de salons injectés dans l'application : bean synthétique toujours produit par le processeur. */
-    @Inject
-    InjectedRoomNames injected;
+	/**
+	 * Noms de salons injectés dans l'application : bean synthétique toujours
+	 * produit par le processeur.
+	 */
+	@Inject
+	InjectedRoomNames injected;
 
-    /**
-     * Un TchapRoom par salon configuré, créé dès l'instanciation : jamais modifié
-     * ensuite.
-     */
-    private final Map<String, TchapRoom> handles = new LinkedHashMap<>();
-    private final Map<String, String> nameByRoomId = new ConcurrentHashMap<>();
+	/**
+	 * Un TchapRoom par salon configuré, créé dès l'instanciation : jamais modifié
+	 * ensuite.
+	 */
+	private final Map<String, TchapRoom> handles = new LinkedHashMap<>();
+	private final Map<String, String> nameByRoomId = new ConcurrentHashMap<>();
 
-    @PostConstruct
-    void init() {
-        config.rooms().keySet().forEach(name -> handles.put(name, new TchapRoom(name)));
-    }
+	@PostConstruct
+	void init() {
+		config.rooms().keySet().forEach(name -> handles.put(name, new TchapRoom(name)));
+	}
 
-    /**
-     * Appelé à la création des beans synthétiques @TchapRoomName("...") TchapRoom.
-     */
-    public TchapRoom get(String name) {
-        TchapRoom room = handles.get(name);
-        if (room == null) {
-            throw new IllegalStateException(unknownRoomMessage(name));
-        }
-        return room;
-    }
+	/**
+	 * Appelé à la création des beans synthétiques @TchapRoomName("...") TchapRoom.
+	 */
+	public TchapRoom get(String name) {
+		TchapRoom room = handles.get(name);
+		if (room == null) {
+			throw new IllegalStateException(unknownRoomMessage(name));
+		}
+		return room;
+	}
 
-    public boolean isConfigured() {
-        return !handles.isEmpty();
-    }
+	public boolean isConfigured() {
+		return !handles.isEmpty();
+	}
 
-    public Collection<TchapRoom> all() {
-        return Collections.unmodifiableCollection(handles.values());
-    }
+	public Collection<TchapRoom> all() {
+		return Collections.unmodifiableCollection(handles.values());
+	}
 
-    /** Nom configuré du salon portant cet identifiant résolu, s'il est suivi. */
-    public Optional<String> nameOf(String roomId) {
-        return Optional.ofNullable(nameByRoomId.get(roomId));
-    }
+	/** Nom configuré du salon portant cet identifiant résolu, s'il est suivi. */
+	public Optional<String> nameOf(String roomId) {
+		return Optional.ofNullable(nameByRoomId.get(roomId));
+	}
 
-    /**
-     * Vérifie la configuration, fait rejoindre les salons et restreint la
-     * synchronisation
-     * aux salons disponibles. À appeler avant client.start(). Bloquant (30 s
-     * maximum).
-     *
-     * @return false si des salons sont configurés mais qu'aucun n'est disponible :
-     *         il ne faut alors pas démarrer la synchronisation (un filtre vide
-     *         signifie « tous les salons »)
-     * @throws IllegalStateException si un nom injecté n'est pas configuré,
-     *                               ou si un salon requis ne peut pas être rejoint
-     */
-    public boolean initialize() {
-        validateInjectedNames();
-        if (handles.isEmpty())
-            return true;
+	/**
+	 * Vérifie la configuration, fait rejoindre les salons et restreint la
+	 * synchronisation aux salons disponibles. À appeler avant client.start().
+	 * Bloquant (30 s maximum).
+	 *
+	 * @return false si des salons sont configurés mais qu'aucun n'est disponible :
+	 *         il ne faut alors pas démarrer la synchronisation (un filtre vide
+	 *         signifie « tous les salons »)
+	 *
+	 * @throws IllegalStateException
+	 *             si un nom injecté n'est pas configuré, ou si un salon requis ne
+	 *             peut pas être rejoint
+	 */
+	public boolean initialize() {
+		validateInjectedNames();
+		if (handles.isEmpty())
+			return true;
 
-        Map<String, CompletableFuture<String>> joins = new LinkedHashMap<>();
-        handles.keySet().forEach(name -> joins.put(name, join(config.rooms().get(name).room())));
+		Map<String, CompletableFuture<String>> joins = new LinkedHashMap<>();
+		handles.keySet().forEach(name -> joins.put(name, join(config.rooms().get(name).room())));
 
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(JOIN_TIMEOUT_SEC);
-        List<String> errors = new ArrayList<>();
-        List<String> available = new ArrayList<>();
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(JOIN_TIMEOUT_SEC);
+		List<String> errors = new ArrayList<>();
+		List<String> available = new ArrayList<>();
 
-        for (Map.Entry<String, CompletableFuture<String>> entry : joins.entrySet()) {
-            String name = entry.getKey();
-            TchapRoom handle = handles.get(name);
-            TchapConfig.RoomConfig roomConfig = config.rooms().get(name);
-            try {
-                long remaining = Math.max(1L, deadline - System.nanoTime());
-                String roomId = entry.getValue().get(remaining, TimeUnit.NANOSECONDS);
-                handle.bind(client.room(roomId));
-                nameByRoomId.put(roomId, name);
-                available.add(roomId);
-                LOG.infof("Tchap room '%s' joined (%s)", name, roomId);
-            } catch (Exception e) {
-                if (e instanceof InterruptedException)
-                    Thread.currentThread().interrupt();
-                Throwable cause = e instanceof ExecutionException && e.getCause() != null ? e.getCause() : e;
-                String reason = roomConfig.room() + " -> " + cause.getClass().getSimpleName()
-                        + ": " + cause.getMessage();
-                handle.markUnavailable(reason);
-                if (roomConfig.required()) {
-                    errors.add("'" + name + "' (" + reason + ")");
-                } else {
-                    LOG.warnf("Optional Tchap room '%s' is unavailable: %s", name, reason);
-                }
-            }
-        }
+		for (Map.Entry<String, CompletableFuture<String>> entry : joins.entrySet()) {
+			String name = entry.getKey();
+			TchapRoom handle = handles.get(name);
+			TchapConfig.RoomConfig roomConfig = config.rooms().get(name);
+			try {
+				long remaining = Math.max(1L, deadline - System.nanoTime());
+				String roomId = entry.getValue().get(remaining, TimeUnit.NANOSECONDS);
+				handle.bind(client.room(roomId));
+				nameByRoomId.put(roomId, name);
+				available.add(roomId);
+				LOG.infof("Tchap room '%s' joined (%s)", name, roomId);
+			} catch (Exception e) {
+				if (e instanceof InterruptedException)
+					Thread.currentThread().interrupt();
+				Throwable cause = e instanceof ExecutionException && e.getCause() != null ? e.getCause() : e;
+				String reason = roomConfig.room() + " -> " + cause.getClass().getSimpleName() + ": "
+						+ cause.getMessage();
+				handle.markUnavailable(reason);
+				if (roomConfig.required()) {
+					errors.add("'" + name + "' (" + reason + ")");
+				} else {
+					LOG.warnf("Optional Tchap room '%s' is unavailable: %s", name, reason);
+				}
+			}
+		}
 
-        if (!errors.isEmpty()) {
-            throw new IllegalStateException("Cannot join required Tchap room(s): " + String.join("; ", errors)
-                    + ". Set quarkus.tchap.rooms.\"<name>\".required=false to start without it.");
-        }
-        if (!available.isEmpty()) {
-            client.restrictToRooms(available);
-        }
-        return !available.isEmpty();
-    }
+		if (!errors.isEmpty()) {
+			throw new IllegalStateException("Cannot join required Tchap room(s): " + String.join("; ", errors)
+					+ ". Set quarkus.tchap.rooms.\"<name>\".required=false to start without it.");
+		}
+		if (!available.isEmpty()) {
+			client.restrictToRooms(available);
+		}
+		return !available.isEmpty();
+	}
 
-    private CompletableFuture<String> join(String roomIdOrAlias) {
-        try {
-            return client.rooms().resolveAndJoin(roomIdOrAlias).toCompletableFuture();
-        } catch (RuntimeException e) {
-            return CompletableFuture.failedFuture(e);
-        }
-    }
+	private CompletableFuture<String> join(String roomIdOrAlias) {
+		try {
+			return client.rooms().resolveAndJoin(roomIdOrAlias).toCompletableFuture();
+		} catch (RuntimeException e) {
+			return CompletableFuture.failedFuture(e);
+		}
+	}
 
-    private void validateInjectedNames() {
-        Set<String> missing = new TreeSet<>(injected.names());
-        missing.removeAll(handles.keySet());
-        if (!missing.isEmpty()) {
-            throw new IllegalStateException(unknownRoomMessage(missing.iterator().next())
-                    + (missing.size() > 1 ? " (also missing: " + missing + ")" : ""));
-        }
-    }
+	private void validateInjectedNames() {
+		Set<String> missing = new TreeSet<>(injected.names());
+		missing.removeAll(handles.keySet());
+		if (!missing.isEmpty()) {
+			throw new IllegalStateException(unknownRoomMessage(missing.iterator().next())
+					+ (missing.size() > 1 ? " (also missing: " + missing + ")" : ""));
+		}
+	}
 
-    private static String unknownRoomMessage(String name) {
-        return "Tchap room '" + name + "' is not configured: declare quarkus.tchap.rooms.\"" + name
-                + "\".room=<room id or alias>";
-    }
+	private static String unknownRoomMessage(String name) {
+		return "Tchap room '" + name + "' is not configured: declare quarkus.tchap.rooms.\"" + name
+				+ "\".room=<room id or alias>";
+	}
 }

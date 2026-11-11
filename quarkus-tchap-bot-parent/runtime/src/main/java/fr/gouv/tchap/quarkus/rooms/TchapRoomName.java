@@ -2,7 +2,6 @@ package fr.gouv.tchap.quarkus.rooms;
 
 import jakarta.enterprise.util.AnnotationLiteral;
 import jakarta.inject.Qualifier;
-
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -24,27 +23,27 @@ import java.lang.annotation.Target;
 @Qualifier
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ ElementType.FIELD, ElementType.PARAMETER, ElementType.METHOD, ElementType.TYPE })
+@Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.METHOD, ElementType.TYPE})
 public @interface TchapRoomName {
 
-    /** Nom du salon dans la configuration. */
-    String value();
+	/** Nom du salon dans la configuration. */
+	String value();
 
-    /** Instance programmatique, pour Event.select(...) ou Instance.select(...). */
-    // Pattern CDI standard : AnnotationLiteral + interface d'annotation
-    final class Literal extends AnnotationLiteral<TchapRoomName> implements TchapRoomName {
+	/** Instance programmatique, pour Event.select(...) ou Instance.select(...). */
+	// Pattern CDI standard : AnnotationLiteral + interface d'annotation
+	final class Literal extends AnnotationLiteral<TchapRoomName> implements TchapRoomName {
 
-        private static final long serialVersionUID = 1L;
+		private static final long serialVersionUID = 1L;
 
-        private final String value;
+		private final String value;
 
-        public Literal(String value) {
-            this.value = value;
-        }
+		public Literal(String value) {
+			this.value = value;
+		}
 
-        @Override
-        public String value() {
-            return value;
-        }
-    }
+		@Override
+		public String value() {
+			return value;
+		}
+	}
 }

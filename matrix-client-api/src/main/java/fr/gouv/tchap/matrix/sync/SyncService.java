@@ -4,9 +4,9 @@ import java.util.concurrent.CompletionStage;
 
 public interface SyncService {
 
-    CompletionStage<Void> start();
+	CompletionStage<Void> start();
 
-    CompletionStage<Void> stop();
+	CompletionStage<Void> stop();
 
-    boolean isRunning();
+	boolean isRunning();
 }

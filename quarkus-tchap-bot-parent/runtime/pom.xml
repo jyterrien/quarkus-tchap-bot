@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -17,7 +15,8 @@
         <!-- Core & transport -->
         <dependency>
             <groupId>fr.gouv.tchap</groupId>
-            <artifactId>matrix-transport-api</artifactId>   <!-- HttpTransport + exceptions -->
+            <artifactId>matrix-transport-api</artifactId>
+            <!-- HttpTransport + exceptions -->
         </dependency>
         <dependency>
             <groupId>fr.gouv.tchap</groupId>
@@ -60,11 +59,11 @@
             <artifactId>quarkus-junit5-mockito</artifactId>
             <scope>test</scope>
         </dependency>
-            <dependency>
+        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-vertx</artifactId>
         </dependency>
-</dependencies>
+    </dependencies>
     <build>
         <plugins>
             <plugin>
@@ -108,7 +107,7 @@
                     </execution>
                 </executions>
             </plugin>
-        
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>

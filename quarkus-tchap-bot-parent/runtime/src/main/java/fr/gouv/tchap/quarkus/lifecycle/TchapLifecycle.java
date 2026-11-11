@@ -8,60 +8,61 @@ import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import org.jboss.logging.Logger;
-
 import java.util.concurrent.TimeUnit;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class TchapLifecycle {
 
-    private static final Logger LOG = Logger.getLogger(TchapLifecycle.class);
-    private static final long START_TIMEOUT_SEC = 30;
-    private static final long STOP_TIMEOUT_SEC  = 10;
+	private static final Logger LOG = Logger.getLogger(TchapLifecycle.class);
+	private static final long START_TIMEOUT_SEC = 30;
+	private static final long STOP_TIMEOUT_SEC = 10;
 
-    @Inject
-    MatrixClient client;
+	@Inject
+	MatrixClient client;
 
-    @Inject
-    TchapConfig config;
+	@Inject
+	TchapConfig config;
 
-    @Inject
-    TchapRooms rooms;
+	@Inject
+	TchapRooms rooms;
 
-    private volatile boolean syncStarted;
+	private volatile boolean syncStarted;
 
-    void onStart(@Observes StartupEvent event) {
-        // Les salons nommés sont rejoints même si la synchronisation est désactivée : on veut pouvoir y écrire
-        boolean anyRoomAvailable = rooms.initialize();
+	void onStart(@Observes StartupEvent event) {
+		// Les salons nommés sont rejoints même si la synchronisation est désactivée :
+		// on veut pouvoir y écrire
+		boolean anyRoomAvailable = rooms.initialize();
 
-        if (!config.sync().enabled()) {
-            LOG.info("Tchap sync disabled (quarkus.tchap.sync.enabled=false): "
-                + "the bot can send messages but will not receive any");
-            return;
-        }
-        if (!anyRoomAvailable) {
-            LOG.warn("None of the configured Tchap rooms is available: sync not started");
-            return;
-        }
-        LOG.info("Starting Tchap bot");
-        try {
-            client.start().toCompletableFuture().get(START_TIMEOUT_SEC, TimeUnit.SECONDS);
-            syncStarted = true;
-            LOG.info("Tchap bot started");
-        } catch (Exception e) {
-            LOG.error("Failed to start Tchap bot", e);
-            throw new IllegalStateException("Tchap bot failed to start", e);
-        }
-    }
+		if (!config.sync().enabled()) {
+			LOG.info("Tchap sync disabled (quarkus.tchap.sync.enabled=false): "
+					+ "the bot can send messages but will not receive any");
+			return;
+		}
+		if (!anyRoomAvailable) {
+			LOG.warn("None of the configured Tchap rooms is available: sync not started");
+			return;
+		}
+		LOG.info("Starting Tchap bot");
+		try {
+			client.start().toCompletableFuture().get(START_TIMEOUT_SEC, TimeUnit.SECONDS);
+			syncStarted = true;
+			LOG.info("Tchap bot started");
+		} catch (Exception e) {
+			LOG.error("Failed to start Tchap bot", e);
+			throw new IllegalStateException("Tchap bot failed to start", e);
+		}
+	}
 
-    void onStop(@Observes ShutdownEvent event) {
-        if (!syncStarted) return;
-        LOG.info("Stopping Tchap bot");
-        try {
-            client.stop().toCompletableFuture().get(STOP_TIMEOUT_SEC, TimeUnit.SECONDS);
-            LOG.info("Tchap bot stopped");
-        } catch (Exception e) {
-            LOG.warn("Error while stopping Tchap bot", e);
-        }
-    }
+	void onStop(@Observes ShutdownEvent event) {
+		if (!syncStarted)
+			return;
+		LOG.info("Stopping Tchap bot");
+		try {
+			client.stop().toCompletableFuture().get(STOP_TIMEOUT_SEC, TimeUnit.SECONDS);
+			LOG.info("Tchap bot stopped");
+		} catch (Exception e) {
+			LOG.warn("Error while stopping Tchap bot", e);
+		}
+	}
 }

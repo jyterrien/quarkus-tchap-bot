@@ -19,66 +19,61 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
-import org.jboss.logging.Logger;
-
 import java.nio.file.Path;
 import java.util.function.Consumer;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class TchapClientProducer {
 
-    private static final Logger LOG = Logger.getLogger(TchapClientProducer.class);
+	private static final Logger LOG = Logger.getLogger(TchapClientProducer.class);
 
-    /**
-     * Magasin du token de sync selon {@code quarkus.tchap.sync.store}.
-     * {@code @DefaultBean} : une application peut fournir son propre bean SyncTokenStore
-     * (base de données, etc.), qui remplace alors celui-ci.
-     */
-    @Produces
-    @Singleton
-    @DefaultBean
-    public SyncTokenStore syncTokenStore(TchapConfig config) {
-        return switch (config.sync().store()) {
-            case MEMORY -> new InMemorySyncTokenStore();
-            case FILE -> new FileSyncTokenStore(Path.of(config.sync().storePath()));
-        };
-    }
+	/**
+	 * Magasin du token de sync selon {@code quarkus.tchap.sync.store}.
+	 * {@code @DefaultBean} : une application peut fournir son propre bean
+	 * SyncTokenStore (base de données, etc.), qui remplace alors celui-ci.
+	 */
+	@Produces
+	@Singleton
+	@DefaultBean
+	public SyncTokenStore syncTokenStore(TchapConfig config) {
+		return switch (config.sync().store()) {
+			case MEMORY -> new InMemorySyncTokenStore();
+			case FILE -> new FileSyncTokenStore(Path.of(config.sync().storePath()));
+		};
+	}
 
-    @Produces
-    @Singleton
-    public HttpTransport httpTransport(TchapConfig config, Vertx vertx) {
-        return new VertxHttpTransport(vertx, config.homeserverUrl().toString());
-    }
+	@Produces
+	@Singleton
+	public HttpTransport httpTransport(TchapConfig config, Vertx vertx) {
+		return new VertxHttpTransport(vertx, config.homeserverUrl().toString());
+	}
 
-    void disposeTransport(@Disposes HttpTransport transport) {
-        transport.close();
-    }
+	void disposeTransport(@Disposes HttpTransport transport) {
+		transport.close();
+	}
 
-    @Produces
-    @Singleton
-    @Startup
-    public MatrixClient matrixClient(TchapConfig config,
-                                     HttpTransport httpTransport,
-                                     SyncTokenStore tokenStore,
-                                     TchapEventPublisher publisher) {
-        String token = config.accessToken()
-            .orElseThrow(() -> new IllegalStateException("quarkus.tchap.access-token is required"));
-        String userId = config.userId().orElse(null);
+	@Produces
+	@Singleton
+	@Startup
+	public MatrixClient matrixClient(TchapConfig config, HttpTransport httpTransport, SyncTokenStore tokenStore,
+			TchapEventPublisher publisher) {
+		String token = config.accessToken()
+				.orElseThrow(() -> new IllegalStateException("quarkus.tchap.access-token is required"));
+		String userId = config.userId().orElse(null);
 
-        boolean ignoreSelf = config.bot().ignoreSelfMessages();
-        if (ignoreSelf && userId == null) {
-            LOG.warn("quarkus.tchap.user-id is not set: quarkus.tchap.bot.ignore-self-messages "
-                + "has no effect and the bot will receive its own messages");
-        }
+		boolean ignoreSelf = config.bot().ignoreSelfMessages();
+		if (ignoreSelf && userId == null) {
+			LOG.warn("quarkus.tchap.user-id is not set: quarkus.tchap.bot.ignore-self-messages "
+					+ "has no effect and the bot will receive its own messages");
+		}
 
-        TchapMessageMapper mapper = new TchapMessageMapper(ignoreSelf, userId);
-        Consumer<MatrixEvent> consumer = ev -> mapper.map(ev).ifPresent(publisher::publish);
+		TchapMessageMapper mapper = new TchapMessageMapper(ignoreSelf, userId);
+		Consumer<MatrixEvent> consumer = ev -> mapper.map(ev).ifPresent(publisher::publish);
 
-        MatrixClientOptions options = new MatrixClientOptions(
-            config.sync().initialLimit(),
-            config.sync().timeout(),
-            config.bot().autoJoinInvitedRooms());
+		MatrixClientOptions options = new MatrixClientOptions(config.sync().initialLimit(), config.sync().timeout(),
+				config.bot().autoJoinInvitedRooms());
 
-        return new DefaultMatrixClient(httpTransport, token, userId, tokenStore, consumer, options);
-    }
+		return new DefaultMatrixClient(httpTransport, token, userId, tokenStore, consumer, options);
+	}
 }

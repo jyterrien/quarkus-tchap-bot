@@ -4,8 +4,8 @@ import fr.gouv.tchap.matrix.auth.Session;
 
 public record DefaultSession(String userId, String deviceId, String accessToken) implements Session {
 
-    @Override
-    public boolean isValid() {
-        return accessToken != null && !accessToken.isBlank();
-    }
+	@Override
+	public boolean isValid() {
+		return accessToken != null && !accessToken.isBlank();
+	}
 }
