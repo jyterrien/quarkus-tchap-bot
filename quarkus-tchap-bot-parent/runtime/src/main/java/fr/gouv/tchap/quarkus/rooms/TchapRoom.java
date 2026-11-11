@@ -54,6 +54,23 @@ public final class TchapRoom {
         return r == null ? unavailable() : r.sendNotice(body);
     }
 
+    /**
+     * Envoie un message texte dans un thread de ce salon. {@code threadRootId} est l'événement
+     * racine du thread (voir {@code TchapMessage#replyThreadId()} pour répondre à un message reçu).
+     *
+     * @throws IllegalArgumentException si {@code threadRootId} est nul ou vide et que le salon est disponible
+     */
+    public CompletionStage<MessageReceipt> sendTextInThread(String threadRootId, String body) {
+        MatrixRoom r = room;
+        return r == null ? unavailable() : r.sendTextInThread(threadRootId, body);
+    }
+
+    /** Comme {@link #sendTextInThread}, avec le msgtype {@code m.notice}. */
+    public CompletionStage<MessageReceipt> sendNoticeInThread(String threadRootId, String body) {
+        MatrixRoom r = room;
+        return r == null ? unavailable() : r.sendNoticeInThread(threadRootId, body);
+    }
+
     void bind(MatrixRoom matrixRoom) {
         this.room = matrixRoom;
     }

@@ -152,11 +152,21 @@ final class FakeHomeserver implements AutoCloseable {
     // ---- Données de test ----
 
     static String messageEvent(String eventId, String body) {
-        return "{\"event_id\":\"" + eventId + "\",\"sender\":\"@alice:s\",\"type\":\"m.room.message\","
-            + "\"origin_server_ts\":1,\"content\":{\"msgtype\":\"m.text\",\"body\":\"" + body + "\"}}";
+        return messageEvent(eventId, body, null);
     }
 
-    /** Réponse /sync dont chaque salon contient un message : {@code {roomId, eventId, body}}. */
+    /** Message ; si {@code threadRootId} n'est pas nul, c'est une réponse dans ce thread (relation m.thread). */
+    static String messageEvent(String eventId, String body, String threadRootId) {
+        String relation = threadRootId == null ? ""
+            : ",\"m.relates_to\":{\"rel_type\":\"m.thread\",\"event_id\":\"" + threadRootId + "\"}";
+        return "{\"event_id\":\"" + eventId + "\",\"sender\":\"@alice:s\",\"type\":\"m.room.message\","
+            + "\"origin_server_ts\":1,\"content\":{\"msgtype\":\"m.text\",\"body\":\"" + body + "\"" + relation + "}}";
+    }
+
+    /**
+     * Réponse /sync dont chaque salon contient un message : {@code {roomId, eventId, body}}, ou
+     * {@code {roomId, eventId, body, threadRootId}} pour une réponse dans un thread.
+     */
     static String syncWith(String[]... roomEvents) {
         StringBuilder joined = new StringBuilder();
         for (String[] e : roomEvents) {
@@ -164,7 +174,7 @@ final class FakeHomeserver implements AutoCloseable {
                 joined.append(',');
             }
             joined.append('"').append(e[0]).append("\":{\"timeline\":{\"events\":[")
-                .append(messageEvent(e[1], e[2])).append("]}}");
+                .append(messageEvent(e[1], e[2], e.length > 3 ? e[3] : null)).append("]}}");
         }
         return "{\"next_batch\":\"s1\","
             + "\"account_data\":{\"events\":[]},"

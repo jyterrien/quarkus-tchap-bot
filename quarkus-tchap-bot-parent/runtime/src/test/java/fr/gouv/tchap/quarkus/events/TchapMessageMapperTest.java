@@ -81,4 +81,41 @@ class TchapMessageMapperTest {
         assertDoesNotThrow(() -> assertTrue(
             mapper.map(event("m.room.message", "@alice:s", "not json")).isEmpty()));
     }
+
+    // ---- threads ------------------------------------------------------------------------------
+
+    private static MatrixEvent threadEvent(String eventId, String threadRootId) {
+        return new MatrixEvent(eventId, "!room:s", "@alice:s", "m.room.message",
+            "{\"msgtype\":\"m.text\",\"body\":\"re\"}", TS, threadRootId);
+    }
+
+    @Test
+    void carriesTheThreadRoot_ofAThreadReply() {
+        TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+        TchapMessage m = mapper.map(threadEvent("$reply", "$root")).orElseThrow();
+
+        assertEquals("$root", m.threadRootId());
+        assertTrue(m.isInThread());
+        assertEquals("$root", m.replyThreadId());
+    }
+
+    @Test
+    void plainMessage_isNotInAThread_andRepliesOpenAThreadOnItself() {
+        TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+        TchapMessage m = mapper.map(event("m.room.message", "@alice:s", "{\"body\":\"salut\"}")).orElseThrow();
+
+        assertNull(m.threadRootId());
+        assertFalse(m.isInThread());
+        assertEquals("$e1", m.replyThreadId());
+    }
+
+    @Test
+    void messageConstructorWithoutThread_staysCompatible() {
+        TchapMessage m = new TchapMessage("$e", "!r:s", "@u:s", "hi", TS, false, "m.text");
+
+        assertNull(m.threadRootId());
+        assertFalse(m.isInThread());
+    }
 }

@@ -29,7 +29,8 @@ public class SimpleBot {
         // Ne réagit qu'aux messages de CE salon, jamais d'un autre.
         LOG.infof("!ping received in room %s, replying pong", message.roomId());
         if ("!ping".equals(message.body())) {
-            integration.sendText("pong")
+            integration.sendTextInThread(message.replyThreadId(), "pong")
+            //integration.sendText("pong")
                 .whenComplete((receipt, ex) -> {
                     if (ex != null) {
                         LOG.errorf("Failed to send pong: %s", ex.getMessage());
