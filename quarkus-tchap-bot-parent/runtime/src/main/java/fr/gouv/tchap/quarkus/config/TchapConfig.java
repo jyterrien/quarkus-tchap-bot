@@ -7,6 +7,7 @@ import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 
@@ -44,6 +45,11 @@ public interface TchapConfig {
      * Configuration de la synchronisation Matrix.
      */
     SyncConfig sync();
+
+    /**
+     * Configuration des sondes de santé (/q/health/live et /q/health/ready).
+     */
+    HealthConfig health();
 
     /**
      * Configuration du comportement du bot.
@@ -113,6 +119,19 @@ public interface TchapConfig {
             MEMORY,
             FILE
         }
+    }
+
+    interface HealthConfig {
+
+        /**
+         * Durée maximale sans réponse /sync réussie avant que la sonde de liveness passe à DOWN
+         * (boucle de synchronisation bloquée ou homeserver injoignable depuis trop longtemps).
+         * Doit être nettement supérieure à {@code quarkus.tchap.sync.timeout} (long polling).
+         * Une orchestration qui redémarre le conteneur sur liveness DOWN le fera après cette durée.
+         */
+        @WithName("sync-max-silence")
+        @WithDefault("2M")
+        Duration syncMaxSilence();
     }
 
     interface BotConfig {

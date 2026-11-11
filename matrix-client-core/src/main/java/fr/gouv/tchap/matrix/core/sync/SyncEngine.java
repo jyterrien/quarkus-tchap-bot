@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
+import fr.gouv.tchap.matrix.sync.SyncHealth;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -21,6 +23,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static java.lang.System.Logger.Level.DEBUG;
@@ -62,6 +65,12 @@ public class SyncEngine {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile ScheduledExecutorService executor;
     private volatile String currentToken;
+
+    // Santé de la boucle (voir health())
+    private volatile Instant startedAt;
+    private volatile Instant lastSuccess;
+    private volatile String lastError;
+    private final AtomicInteger consecutiveFailures = new AtomicInteger();
 
     /** Salons suivis. Vide = tous les salons du compte. Remplacé atomiquement, jamais modifié. */
     private volatile Set<String> roomFilter = Collections.emptySet();
@@ -140,6 +149,10 @@ public class SyncEngine {
         if (!running.compareAndSet(false, true)) return CompletableFuture.completedFuture(null);
         return tokenStore.load().thenCompose(opt -> {
             currentToken = opt.orElse(null);
+            lastSuccess = null;
+            lastError = null;
+            consecutiveFailures.set(0);
+            startedAt = Instant.now();
             executor = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "tchap-sync");
                 t.setDaemon(true);
@@ -174,6 +187,8 @@ public class SyncEngine {
             .thenAccept(this::handleResponse)
             .exceptionally(ex -> {
                 Throwable cause = unwrap(ex);
+                consecutiveFailures.incrementAndGet();
+                lastError = describe(cause);
                 long delay = retryDelayMs(cause);
                 if (cause instanceof RateLimitException) {
                     LOG.log(WARNING, "Rate limited by homeserver, retrying in " + delay + " ms");
@@ -204,7 +219,25 @@ public class SyncEngine {
                 return null;
             });
         }
+        // Réponse traitée jusqu'au bout : la boucle progresse
+        lastSuccess = Instant.now();
+        lastError = null;
+        consecutiveFailures.set(0);
         schedule(0);
+    }
+
+    /**
+     * Instantané de la santé de la boucle. Une boucle bloquée (requête qui ne rend jamais la main)
+     * se reconnaît à une {@code lastSuccess} qui vieillit sans qu'aucune erreur ne soit comptée.
+     */
+    public SyncHealth health() {
+        return new SyncHealth(startedAt, lastSuccess, consecutiveFailures.get(), lastError);
+    }
+
+    private static String describe(Throwable t) {
+        String message = t.getMessage();
+        String text = t.getClass().getSimpleName() + (message == null ? "" : ": " + message);
+        return text.length() > 200 ? text.substring(0, 200) + "…" : text;
     }
 
     /** Isole le consumer : une exception de l'application ne doit pas casser la boucle. */

@@ -17,6 +17,7 @@ import fr.gouv.tchap.matrix.exception.MatrixException;
 import fr.gouv.tchap.matrix.message.MessageService;
 import fr.gouv.tchap.matrix.room.MatrixRoom;
 import fr.gouv.tchap.matrix.room.RoomService;
+import fr.gouv.tchap.matrix.sync.SyncHealth;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
 
@@ -124,4 +125,5 @@ public class DefaultMatrixClient implements MatrixClient {
     @Override public RoomService rooms()       { return roomService; }
     @Override public Session session()         { return session.get(); }
     @Override public ClientStatus status()     { return status.get(); }
+    @Override public SyncHealth syncHealth()   { return syncEngine.health(); }
 }

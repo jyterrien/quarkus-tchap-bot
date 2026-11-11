@@ -22,6 +22,12 @@ public interface MatrixClient {
     RoomService rooms();
     Session session();
     ClientStatus status();
+
+    /**
+     * État de la boucle de synchronisation : dernière réussite, échecs consécutifs. Contrairement à
+     * {@link #status()}, qui ne change qu'au démarrage et à l'arrêt, reflète la santé réelle de /sync.
+     */
+    fr.gouv.tchap.matrix.sync.SyncHealth syncHealth();
 /** Accès restreint à un salon (identifiant résolu). Aucun appel réseau. */
 MatrixRoom room(String roomId);
 

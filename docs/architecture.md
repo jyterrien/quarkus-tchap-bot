@@ -31,3 +31,9 @@ void onMessage(@Observes @TchapRoomName("oncall") TchapMessage message) {
 
 `TchapMessage` et `MatrixEvent` conservent leur constructeur antérieur (sans thread) : le code existant
 compile sans changement.
+
+## Sondes de santé
+
+Deux sondes distinctes, chacune dans son seul groupe (sinon elle apparaît en double dans `/q/health`) :
+`TchapReadinessCheck` (le client est démarré) et `TchapLivenessCheck` (la boucle `/sync` progresse, d'après
+`MatrixClient.syncHealth()`). Voir `docs/configuration.md`.

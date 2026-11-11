@@ -1,0 +1,718 @@
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/docs/architecture.md b/quarkus-tchap-bot/docs/architecture.md
+--- a/quarkus-tchap-bot/docs/architecture.md	2026-11-11 08:51:38.779169452 +0000
++++ b/quarkus-tchap-bot/docs/architecture.md	2026-11-11 08:52:30.585686378 +0000
+@@ -31,3 +31,9 @@
+ 
+ `TchapMessage` et `MatrixEvent` conservent leur constructeur antérieur (sans thread) : le code existant
+ compile sans changement.
++
++## Sondes de santé
++
++Deux sondes distinctes, chacune dans son seul groupe (sinon elle apparaît en double dans `/q/health`) :
++`TchapReadinessCheck` (le client est démarré) et `TchapLivenessCheck` (la boucle `/sync` progresse, d'après
++`MatrixClient.syncHealth()`). Voir `docs/configuration.md`.
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/docs/configuration.md b/quarkus-tchap-bot/docs/configuration.md
+--- a/quarkus-tchap-bot/docs/configuration.md	2026-11-11 08:51:38.779269438 +0000
++++ b/quarkus-tchap-bot/docs/configuration.md	2026-11-11 08:52:14.695992294 +0000
+@@ -5,3 +5,20 @@
+ | Propriété | Description |
+ |---|---|
+ |
++
++## Sondes de santé
++
++| Sonde | Chemin | Nom | Rôle |
++|---|---|---|---|
++| Readiness | `/q/health/ready` | `tchap-bot` | Le client est démarré (salons nommés listés pour information). |
++| Liveness | `/q/health/live` | `tchap-bot-sync` | La boucle `/sync` progresse. |
++
++`/q/health` agrège les deux.
++
++| Propriété | Défaut | Description |
++|---|---|---|
++| `quarkus.tchap.health.sync-max-silence` | `2M` | Durée sans `/sync` réussi avant que la liveness passe à DOWN. Doit être nettement supérieure à `quarkus.tchap.sync.timeout`. |
++
++La liveness passe à DOWN aussi quand le homeserver est injoignable depuis plus que `sync-max-silence` :
++un orchestrateur qui redémarre le conteneur sur liveness DOWN le fera alors. Augmenter la valeur pour
++tolérer de plus longues indisponibilités du homeserver. Synchronisation désactivée : la liveness reste UP.
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/matrix-client-api/src/main/java/fr/gouv/tchap/matrix/client/MatrixClient.java b/quarkus-tchap-bot/matrix-client-api/src/main/java/fr/gouv/tchap/matrix/client/MatrixClient.java
+--- a/quarkus-tchap-bot/matrix-client-api/src/main/java/fr/gouv/tchap/matrix/client/MatrixClient.java	2026-11-11 08:51:38.777924258 +0000
++++ b/quarkus-tchap-bot/matrix-client-api/src/main/java/fr/gouv/tchap/matrix/client/MatrixClient.java	2026-11-11 08:51:38.826671643 +0000
+@@ -22,6 +22,12 @@
+     RoomService rooms();
+     Session session();
+     ClientStatus status();
++
++    /**
++     * État de la boucle de synchronisation : dernière réussite, échecs consécutifs. Contrairement à
++     * {@link #status()}, qui ne change qu'au démarrage et à l'arrêt, reflète la santé réelle de /sync.
++     */
++    fr.gouv.tchap.matrix.sync.SyncHealth syncHealth();
+ /** Accès restreint à un salon (identifiant résolu). Aucun appel réseau. */
+ MatrixRoom room(String roomId);
+ 
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/matrix-client-api/src/main/java/fr/gouv/tchap/matrix/sync/SyncHealth.java b/quarkus-tchap-bot/matrix-client-api/src/main/java/fr/gouv/tchap/matrix/sync/SyncHealth.java
+--- a/quarkus-tchap-bot/matrix-client-api/src/main/java/fr/gouv/tchap/matrix/sync/SyncHealth.java	1970-01-01 00:00:00.000000000 +0000
++++ b/quarkus-tchap-bot/matrix-client-api/src/main/java/fr/gouv/tchap/matrix/sync/SyncHealth.java	2026-11-11 08:51:38.780472274 +0000
+@@ -0,0 +1,29 @@
++package fr.gouv.tchap.matrix.sync;
++
++import java.time.Instant;
++
++/**
++ * Instantané de l'état de la boucle de synchronisation /sync.
++ *
++ * @param startedAt           instant du démarrage de la boucle, ou {@code null} si elle n'a jamais démarré
++ * @param lastSuccess         instant de la dernière réponse /sync traitée avec succès, ou {@code null}
++ *                            si aucune n'a encore abouti depuis le démarrage
++ * @param consecutiveFailures nombre d'échecs consécutifs depuis la dernière réussite (0 = tout va bien)
++ * @param lastError           description de la dernière erreur, ou {@code null} si la dernière tentative a réussi
++ */
++public record SyncHealth(
++    Instant startedAt,
++    Instant lastSuccess,
++    int consecutiveFailures,
++    String lastError
++) {
++
++    /** État d'une boucle qui n'a jamais démarré. */
++    public static SyncHealth notStarted() {
++        return new SyncHealth(null, null, 0, null);
++    }
++
++    public boolean isStarted() {
++        return startedAt != null;
++    }
++}
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/matrix-client-core/src/main/java/fr/gouv/tchap/matrix/core/client/DefaultMatrixClient.java b/quarkus-tchap-bot/matrix-client-core/src/main/java/fr/gouv/tchap/matrix/core/client/DefaultMatrixClient.java
+--- a/quarkus-tchap-bot/matrix-client-core/src/main/java/fr/gouv/tchap/matrix/core/client/DefaultMatrixClient.java	2026-11-11 08:51:38.771488266 +0000
++++ b/quarkus-tchap-bot/matrix-client-core/src/main/java/fr/gouv/tchap/matrix/core/client/DefaultMatrixClient.java	2026-11-11 08:51:38.827043541 +0000
+@@ -17,6 +17,7 @@
+ import fr.gouv.tchap.matrix.message.MessageService;
+ import fr.gouv.tchap.matrix.room.MatrixRoom;
+ import fr.gouv.tchap.matrix.room.RoomService;
++import fr.gouv.tchap.matrix.sync.SyncHealth;
+ import fr.gouv.tchap.matrix.sync.SyncTokenStore;
+ import fr.gouv.tchap.matrix.transport.HttpTransport;
+ 
+@@ -124,4 +125,5 @@
+     @Override public RoomService rooms()       { return roomService; }
+     @Override public Session session()         { return session.get(); }
+     @Override public ClientStatus status()     { return status.get(); }
++    @Override public SyncHealth syncHealth()   { return syncEngine.health(); }
+ }
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/matrix-client-core/src/main/java/fr/gouv/tchap/matrix/core/sync/SyncEngine.java b/quarkus-tchap-bot/matrix-client-core/src/main/java/fr/gouv/tchap/matrix/core/sync/SyncEngine.java
+--- a/quarkus-tchap-bot/matrix-client-core/src/main/java/fr/gouv/tchap/matrix/core/sync/SyncEngine.java	2026-11-11 08:51:38.771629995 +0000
++++ b/quarkus-tchap-bot/matrix-client-core/src/main/java/fr/gouv/tchap/matrix/core/sync/SyncEngine.java	2026-11-11 08:51:38.827406583 +0000
+@@ -4,8 +4,10 @@
+ import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
+ import fr.gouv.tchap.matrix.exception.RateLimitException;
+ import fr.gouv.tchap.matrix.event.MatrixEvent;
++import fr.gouv.tchap.matrix.sync.SyncHealth;
+ import fr.gouv.tchap.matrix.sync.SyncTokenStore;
+ 
++import java.time.Instant;
+ import java.util.Collection;
+ import java.util.Collections;
+ import java.util.LinkedHashMap;
+@@ -21,6 +23,7 @@
+ import java.util.concurrent.ScheduledExecutorService;
+ import java.util.concurrent.TimeUnit;
+ import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.function.Consumer;
+ 
+ import static java.lang.System.Logger.Level.DEBUG;
+@@ -63,6 +66,12 @@
+     private volatile ScheduledExecutorService executor;
+     private volatile String currentToken;
+ 
++    // Santé de la boucle (voir health())
++    private volatile Instant startedAt;
++    private volatile Instant lastSuccess;
++    private volatile String lastError;
++    private final AtomicInteger consecutiveFailures = new AtomicInteger();
++
+     /** Salons suivis. Vide = tous les salons du compte. Remplacé atomiquement, jamais modifié. */
+     private volatile Set<String> roomFilter = Collections.emptySet();
+ 
+@@ -140,6 +149,10 @@
+         if (!running.compareAndSet(false, true)) return CompletableFuture.completedFuture(null);
+         return tokenStore.load().thenCompose(opt -> {
+             currentToken = opt.orElse(null);
++            lastSuccess = null;
++            lastError = null;
++            consecutiveFailures.set(0);
++            startedAt = Instant.now();
+             executor = Executors.newSingleThreadScheduledExecutor(r -> {
+                 Thread t = new Thread(r, "tchap-sync");
+                 t.setDaemon(true);
+@@ -174,6 +187,8 @@
+             .thenAccept(this::handleResponse)
+             .exceptionally(ex -> {
+                 Throwable cause = unwrap(ex);
++                consecutiveFailures.incrementAndGet();
++                lastError = describe(cause);
+                 long delay = retryDelayMs(cause);
+                 if (cause instanceof RateLimitException) {
+                     LOG.log(WARNING, "Rate limited by homeserver, retrying in " + delay + " ms");
+@@ -204,9 +219,27 @@
+                 return null;
+             });
+         }
++        // Réponse traitée jusqu'au bout : la boucle progresse
++        lastSuccess = Instant.now();
++        lastError = null;
++        consecutiveFailures.set(0);
+         schedule(0);
+     }
+ 
++    /**
++     * Instantané de la santé de la boucle. Une boucle bloquée (requête qui ne rend jamais la main)
++     * se reconnaît à une {@code lastSuccess} qui vieillit sans qu'aucune erreur ne soit comptée.
++     */
++    public SyncHealth health() {
++        return new SyncHealth(startedAt, lastSuccess, consecutiveFailures.get(), lastError);
++    }
++
++    private static String describe(Throwable t) {
++        String message = t.getMessage();
++        String text = t.getClass().getSimpleName() + (message == null ? "" : ": " + message);
++        return text.length() > 200 ? text.substring(0, 200) + "…" : text;
++    }
++
+     /** Isole le consumer : une exception de l'application ne doit pas casser la boucle. */
+     private void deliver(MatrixEvent ev) {
+         try {
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineHealthTest.java b/quarkus-tchap-bot/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineHealthTest.java
+--- a/quarkus-tchap-bot/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineHealthTest.java	1970-01-01 00:00:00.000000000 +0000
++++ b/quarkus-tchap-bot/matrix-client-core/src/test/java/fr/gouv/tchap/matrix/core/sync/SyncEngineHealthTest.java	2026-11-11 08:52:14.695992294 +0000
+@@ -0,0 +1,92 @@
++package fr.gouv.tchap.matrix.core.sync;
++
++import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
++import fr.gouv.tchap.matrix.exception.MatrixException;
++import fr.gouv.tchap.matrix.sync.SyncHealth;
++import fr.gouv.tchap.matrix.transport.HttpTransport;
++import org.junit.jupiter.api.Test;
++
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.awaitGets;
++import static fr.gouv.tchap.matrix.core.HttpTransportMocks.scriptedGet;
++import static org.junit.jupiter.api.Assertions.*;
++
++class SyncEngineHealthTest {
++
++    private static SyncEngine engine(HttpTransport transport) {
++        // Les 5 s de délai de retry ne sont pas attendues : on relance aussitôt
++        return new SyncEngine(new MatrixHttpApi(transport, "tok"), new InMemorySyncTokenStore(), ev -> {}) {
++            @Override
++            void schedule(long delayMs) {
++                super.schedule(0);
++            }
++        };
++    }
++
++    @Test
++    void beforeStart_healthIsNotStarted() {
++        SyncEngine engine = engine(scriptedGet("{\"next_batch\":\"s1\"}"));
++
++        SyncHealth h = engine.health();
++
++        assertFalse(h.isStarted());
++        assertNull(h.lastSuccess());
++        assertEquals(0, h.consecutiveFailures());
++    }
++
++    @Test
++    void afterASuccessfulSync_lastSuccessIsSetAndFailuresAreZero() {
++        HttpTransport transport = scriptedGet("{\"next_batch\":\"s1\"}");
++        SyncEngine engine = engine(transport);
++        engine.start().toCompletableFuture().join();
++        try {
++            awaitGets(transport, 2);
++
++            SyncHealth h = engine.health();
++
++            assertTrue(h.isStarted());
++            assertNotNull(h.lastSuccess());
++            assertEquals(0, h.consecutiveFailures());
++            assertNull(h.lastError());
++        } finally {
++            engine.stop().toCompletableFuture().join();
++        }
++    }
++
++    @Test
++    void whileEverySyncFails_failuresAreCountedAndTheErrorIsKept() {
++        HttpTransport transport = scriptedGet(new MatrixException("HTTP 502"));
++        SyncEngine engine = engine(transport);
++        engine.start().toCompletableFuture().join();
++        try {
++            awaitGets(transport, 3);
++
++            SyncHealth h = engine.health();
++
++            assertNull(h.lastSuccess());
++            assertTrue(h.consecutiveFailures() >= 1);
++            assertNotNull(h.lastError());
++            assertTrue(h.lastError().contains("HTTP 502"), h.lastError());
++        } finally {
++            engine.stop().toCompletableFuture().join();
++        }
++    }
++
++    @Test
++    void aSuccessAfterFailures_resetsTheCounterAndTheError() throws Exception {
++        HttpTransport transport = scriptedGet(
++            new MatrixException("HTTP 500"), new MatrixException("HTTP 500"), "{\"next_batch\":\"s1\"}");
++        SyncEngine engine = engine(transport);
++        engine.start().toCompletableFuture().join();
++        try {
++            awaitGets(transport, 4);   // les deux échecs, puis au moins deux réussites
++
++            SyncHealth h = engine.health();
++
++            assertNotNull(h.lastSuccess());
++            assertEquals(0, h.consecutiveFailures());
++            assertNull(h.lastError());
++        } finally {
++            engine.stop().toCompletableFuture().join();
++        }
++    }
++}
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/quarkus-tchap-bot-parent/deployment/src/test/java/fr/gouv/tchap/quarkus/deployment/TchapHealthTest.java b/quarkus-tchap-bot/quarkus-tchap-bot-parent/deployment/src/test/java/fr/gouv/tchap/quarkus/deployment/TchapHealthTest.java
+--- a/quarkus-tchap-bot/quarkus-tchap-bot-parent/deployment/src/test/java/fr/gouv/tchap/quarkus/deployment/TchapHealthTest.java	1970-01-01 00:00:00.000000000 +0000
++++ b/quarkus-tchap-bot/quarkus-tchap-bot-parent/deployment/src/test/java/fr/gouv/tchap/quarkus/deployment/TchapHealthTest.java	2026-11-11 08:52:42.017182182 +0000
+@@ -0,0 +1,81 @@
++package fr.gouv.tchap.quarkus.deployment;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNotEquals;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import org.eclipse.microprofile.health.HealthCheckResponse;
++import org.eclipse.microprofile.health.Liveness;
++import org.eclipse.microprofile.health.Readiness;
++import org.jboss.shrinkwrap.api.asset.StringAsset;
++import org.junit.jupiter.api.AfterAll;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.extension.RegisterExtension;
++
++import fr.gouv.tchap.quarkus.health.TchapLivenessCheck;
++import fr.gouv.tchap.quarkus.health.TchapReadinessCheck;
++import io.quarkus.test.QuarkusExtensionTest;
++import jakarta.inject.Inject;
++
++/**
++ * Deux sondes distinctes : la readiness dit que le bot est démarré, la liveness que /sync progresse.
++ * Chacune n'est enregistrée que dans son groupe, avec son propre nom (pas de doublon dans /q/health).
++ */
++class TchapHealthTest {
++
++    static final FakeHomeserver SERVER = FakeHomeserver.forTest(TchapHealthTest.class, hs -> hs
++            .join("!oncall:s", "!oncall:s")
++            .firstSync(FakeHomeserver.syncWith(new String[] { "!oncall:s", "$e1", "hello" })));
++
++    @RegisterExtension
++    static final QuarkusExtensionTest TEST = new QuarkusExtensionTest()
++            .withApplicationRoot(jar -> jar
++                    .addClasses(FakeHomeserver.class)
++                    .addAsResource(new StringAsset(
++                            "quarkus.tchap.homeserver-url=" + SERVER.url() + "\n"
++                                    + "quarkus.tchap.access-token=tok\n"
++                                    + "quarkus.tchap.rooms.\"oncall\".room=!oncall:s\n"),
++                            "application.properties"));
++
++    @Inject
++    @Readiness
++    TchapReadinessCheck readiness;
++
++    @Inject
++    @Liveness
++    TchapLivenessCheck liveness;
++
++    @AfterAll
++    static void stopServer() {
++        SERVER.close();
++    }
++
++    @Test
++    void readiness_isUp_andListsTheNamedRooms() throws Exception {
++        FakeHomeserver.await(() -> !SERVER.syncPaths().isEmpty());
++
++        HealthCheckResponse r = readiness.call();
++
++        assertEquals("tchap-bot", r.getName());
++        assertEquals(HealthCheckResponse.Status.UP, r.getStatus());
++        assertEquals("RUNNING", r.getData().orElseThrow().get("status"));
++        assertEquals(Boolean.TRUE, r.getData().orElseThrow().get("room oncall"));
++    }
++
++    @Test
++    void liveness_isUp_whileSyncProgresses() throws Exception {
++        FakeHomeserver.await(() -> SERVER.syncPaths().size() >= 2);
++
++        HealthCheckResponse r = liveness.call();
++
++        assertEquals("tchap-bot-sync", r.getName());
++        assertEquals(HealthCheckResponse.Status.UP, r.getStatus());
++        assertEquals("ok", r.getData().orElseThrow().get("sync"));
++        assertTrue(r.getData().orElseThrow().containsKey("last-success"), r.getData().toString());
++    }
++
++    @Test
++    void theTwoChecks_haveDistinctNames() {
++        assertNotEquals(readiness.call().getName(), liveness.call().getName());
++    }
++}
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/config/TchapConfig.java b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/config/TchapConfig.java
+--- a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/config/TchapConfig.java	2026-11-11 08:51:38.772828219 +0000
++++ b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/config/TchapConfig.java	2026-11-11 08:51:55.419890303 +0000
+@@ -7,6 +7,7 @@
+ import io.smallrye.config.WithName;
+ 
+ import java.net.URI;
++import java.time.Duration;
+ import java.util.Map;
+ import java.util.Optional;
+ 
+@@ -46,6 +47,11 @@
+     SyncConfig sync();
+ 
+     /**
++     * Configuration des sondes de santé (/q/health/live et /q/health/ready).
++     */
++    HealthConfig health();
++
++    /**
+      * Configuration du comportement du bot.
+      */
+     BotConfig bot();
+@@ -115,6 +121,19 @@
+         }
+     }
+ 
++    interface HealthConfig {
++
++        /**
++         * Durée maximale sans réponse /sync réussie avant que la sonde de liveness passe à DOWN
++         * (boucle de synchronisation bloquée ou homeserver injoignable depuis trop longtemps).
++         * Doit être nettement supérieure à {@code quarkus.tchap.sync.timeout} (long polling).
++         * Une orchestration qui redémarre le conteneur sur liveness DOWN le fera après cette durée.
++         */
++        @WithName("sync-max-silence")
++        @WithDefault("2M")
++        Duration syncMaxSilence();
++    }
++
+     interface BotConfig {
+ 
+         /**
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/SyncLiveness.java b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/SyncLiveness.java
+--- a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/SyncLiveness.java	1970-01-01 00:00:00.000000000 +0000
++++ b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/SyncLiveness.java	2026-11-11 08:51:55.426279317 +0000
+@@ -0,0 +1,41 @@
++package fr.gouv.tchap.quarkus.health;
++
++import fr.gouv.tchap.matrix.client.ClientStatus;
++import fr.gouv.tchap.matrix.sync.SyncHealth;
++
++import java.time.Duration;
++import java.time.Instant;
++
++/**
++ * Règle de décision de la sonde de liveness, sans dépendance à CDI ni à MicroProfile :
++ * testable sans démarrer Quarkus.
++ */
++final class SyncLiveness {
++
++    /** @param up vrai si la boucle est considérée en bonne santé ; @param state libellé pour le diagnostic */
++    record Verdict(boolean up, String state) {}
++
++    private SyncLiveness() {
++    }
++
++    /**
++     * La boucle /sync est vivante si elle a abouti il y a moins de {@code maxSilence} (ou, tant
++     * qu'aucune réponse n'a abouti, si elle a démarré il y a moins de {@code maxSilence}).
++     * Ne sont pas des pannes : synchronisation désactivée, client pas encore démarré ou en arrêt.
++     */
++    static Verdict evaluate(boolean syncEnabled, ClientStatus status, SyncHealth health,
++                            Duration maxSilence, Instant now) {
++        if (!syncEnabled) {
++            return new Verdict(true, "disabled");
++        }
++        if (status == ClientStatus.FAILED) {
++            return new Verdict(false, "failed");
++        }
++        if (status != ClientStatus.RUNNING || health == null || !health.isStarted()) {
++            return new Verdict(true, "not-running");
++        }
++        Instant reference = health.lastSuccess() != null ? health.lastSuccess() : health.startedAt();
++        boolean fresh = Duration.between(reference, now).compareTo(maxSilence) <= 0;
++        return new Verdict(fresh, fresh ? "ok" : "stalled");
++    }
++}
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapHealthCheck.java b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapHealthCheck.java
+--- a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapHealthCheck.java	2026-11-11 08:51:38.772796990 +0000
++++ b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapHealthCheck.java	1970-01-01 00:00:00.000000000 +0000
+@@ -1,52 +0,0 @@
+-package fr.gouv.tchap.quarkus.health;
+-
+-import fr.gouv.tchap.matrix.client.ClientStatus;
+-import fr.gouv.tchap.matrix.client.MatrixClient;
+-import fr.gouv.tchap.quarkus.config.TchapConfig;
+-import fr.gouv.tchap.quarkus.rooms.TchapRoom;
+-import fr.gouv.tchap.quarkus.rooms.TchapRooms;
+-import jakarta.inject.Inject;
+-
+-import org.eclipse.microprofile.health.HealthCheck;
+-import org.eclipse.microprofile.health.HealthCheckResponse;
+-import org.eclipse.microprofile.health.HealthCheckResponseBuilder;
+-import org.eclipse.microprofile.health.Readiness;
+-
+-/**
+- * État du bot Tchap, exposé en <b>readiness</b> uniquement (/q/health/ready et /q/health).
+- *
+- * <p>Ne pas ajouter {@code @Liveness} sur la même classe : le check serait enregistré dans les deux
+- * groupes et apparaîtrait en double dans /q/health. Et une panne du homeserver ne doit pas provoquer
+- * le redémarrage du processus, ce que ferait une sonde de liveness.
+- */
+-@Readiness
+-public class TchapHealthCheck implements HealthCheck {
+-
+-    @Inject
+-    MatrixClient client;
+-
+-    @Inject
+-    TchapConfig config;
+-
+-    @Inject
+-    TchapRooms rooms;
+-
+-    @Override
+-    public HealthCheckResponse call() {
+-        ClientStatus status = client.status();
+-        boolean syncEnabled = config.sync().enabled();
+-        // Sync désactivée : le client n'est jamais démarré, ce n'est pas une panne
+-        boolean up = !syncEnabled || status == ClientStatus.RUNNING;
+-
+-        HealthCheckResponseBuilder r = HealthCheckResponse.named("tchap-bot")
+-            .status(up)
+-            .withData("status", status.name())
+-            .withData("sync-enabled", syncEnabled);
+-
+-        for (TchapRoom room : rooms.all()) {
+-            r.withData("room " + room.name(), room.isAvailable());
+-        }
+-
+-        return r.build();
+-    }
+-}
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapLivenessCheck.java b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapLivenessCheck.java
+--- a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapLivenessCheck.java	1970-01-01 00:00:00.000000000 +0000
++++ b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapLivenessCheck.java	2026-11-11 08:51:55.427422464 +0000
+@@ -0,0 +1,56 @@
++package fr.gouv.tchap.quarkus.health;
++
++import fr.gouv.tchap.matrix.client.MatrixClient;
++import fr.gouv.tchap.matrix.sync.SyncHealth;
++import fr.gouv.tchap.quarkus.config.TchapConfig;
++import jakarta.inject.Inject;
++import org.eclipse.microprofile.health.HealthCheck;
++import org.eclipse.microprofile.health.HealthCheckResponse;
++import org.eclipse.microprofile.health.HealthCheckResponseBuilder;
++import org.eclipse.microprofile.health.Liveness;
++
++import java.time.Duration;
++import java.time.Instant;
++
++/**
++ * La boucle de synchronisation progresse-t-elle ? Exposé en liveness (/q/health/live).
++ *
++ * <p>DOWN quand aucune réponse /sync n'a abouti depuis {@code quarkus.tchap.health.sync-max-silence} :
++ * boucle bloquée, ou homeserver injoignable depuis trop longtemps. Un échec isolé (réessayé au bout
++ * de quelques secondes) ne fait pas passer la sonde à DOWN.
++ *
++ * <p>Nom distinct de {@link TchapReadinessCheck} : les deux sondes sont agrégées dans /q/health.
++ */
++@Liveness
++public class TchapLivenessCheck implements HealthCheck {
++
++    @Inject
++    MatrixClient client;
++
++    @Inject
++    TchapConfig config;
++
++    @Override
++    public HealthCheckResponse call() {
++        Instant now = Instant.now();
++        SyncHealth health = client.syncHealth();
++        SyncLiveness.Verdict verdict = SyncLiveness.evaluate(
++            config.sync().enabled(), client.status(), health, config.health().syncMaxSilence(), now);
++
++        HealthCheckResponseBuilder r = HealthCheckResponse.named("tchap-bot-sync")
++            .status(verdict.up())
++            .withData("sync", verdict.state());
++
++        if (health != null && health.isStarted()) {
++            if (health.lastSuccess() != null) {
++                r.withData("last-success", health.lastSuccess().toString());
++                r.withData("seconds-since-last-success", Duration.between(health.lastSuccess(), now).toSeconds());
++            }
++            r.withData("consecutive-failures", health.consecutiveFailures());
++            if (health.lastError() != null) {
++                r.withData("last-error", health.lastError());
++            }
++        }
++        return r.build();
++    }
++}
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapReadinessCheck.java b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapReadinessCheck.java
+--- a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapReadinessCheck.java	1970-01-01 00:00:00.000000000 +0000
++++ b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/main/java/fr/gouv/tchap/quarkus/health/TchapReadinessCheck.java	2026-11-11 08:51:55.425365388 +0000
+@@ -0,0 +1,50 @@
++package fr.gouv.tchap.quarkus.health;
++
++import fr.gouv.tchap.matrix.client.ClientStatus;
++import fr.gouv.tchap.matrix.client.MatrixClient;
++import fr.gouv.tchap.quarkus.config.TchapConfig;
++import fr.gouv.tchap.quarkus.rooms.TchapRoom;
++import fr.gouv.tchap.quarkus.rooms.TchapRooms;
++import jakarta.inject.Inject;
++import org.eclipse.microprofile.health.HealthCheck;
++import org.eclipse.microprofile.health.HealthCheckResponse;
++import org.eclipse.microprofile.health.HealthCheckResponseBuilder;
++import org.eclipse.microprofile.health.Readiness;
++
++/**
++ * Le bot est-il prêt à travailler ? Exposé en readiness (/q/health/ready).
++ *
++ * <p>UP quand le client est démarré (ou que la synchronisation est désactivée, auquel cas il
++ * n'est jamais démarré). Les salons nommés sont listés à titre d'information : un salon facultatif
++ * indisponible ne rend pas le bot « non prêt ». La progression de la boucle /sync est le rôle de
++ * {@link TchapLivenessCheck}.
++ */
++@Readiness
++public class TchapReadinessCheck implements HealthCheck {
++
++    @Inject
++    MatrixClient client;
++
++    @Inject
++    TchapConfig config;
++
++    @Inject
++    TchapRooms rooms;
++
++    @Override
++    public HealthCheckResponse call() {
++        ClientStatus status = client.status();
++        boolean syncEnabled = config.sync().enabled();
++        boolean up = !syncEnabled || status == ClientStatus.RUNNING;
++
++        HealthCheckResponseBuilder r = HealthCheckResponse.named("tchap-bot")
++            .status(up)
++            .withData("status", status.name())
++            .withData("sync-enabled", syncEnabled);
++
++        for (TchapRoom room : rooms.all()) {
++            r.withData("room " + room.name(), room.isAvailable());
++        }
++        return r.build();
++    }
++}
+diff -ruN '--exclude=target' a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/test/java/fr/gouv/tchap/quarkus/health/SyncLivenessTest.java b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/test/java/fr/gouv/tchap/quarkus/health/SyncLivenessTest.java
+--- a/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/test/java/fr/gouv/tchap/quarkus/health/SyncLivenessTest.java	1970-01-01 00:00:00.000000000 +0000
++++ b/quarkus-tchap-bot/quarkus-tchap-bot-parent/runtime/src/test/java/fr/gouv/tchap/quarkus/health/SyncLivenessTest.java	2026-11-11 08:52:14.693685433 +0000
+@@ -0,0 +1,89 @@
++package fr.gouv.tchap.quarkus.health;
++
++import fr.gouv.tchap.matrix.client.ClientStatus;
++import fr.gouv.tchap.matrix.sync.SyncHealth;
++import org.junit.jupiter.api.Test;
++
++import java.time.Duration;
++import java.time.Instant;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++/** Test unitaire pur : aucun démarrage de Quarkus. */
++class SyncLivenessTest {
++
++    private static final Instant NOW = Instant.parse("2026-11-11T10:00:00Z");
++    private static final Duration MAX = Duration.ofMinutes(2);
++
++    private static SyncLiveness.Verdict eval(boolean enabled, ClientStatus status, SyncHealth health) {
++        return SyncLiveness.evaluate(enabled, status, health, MAX, NOW);
++    }
++
++    @Test
++    void syncDisabled_isNeverAFailure() {
++        SyncLiveness.Verdict v = eval(false, ClientStatus.NEW, SyncHealth.notStarted());
++
++        assertTrue(v.up());
++        assertEquals("disabled", v.state());
++    }
++
++    @Test
++    void recentSuccess_isUp() {
++        SyncHealth h = new SyncHealth(NOW.minusSeconds(600), NOW.minusSeconds(20), 0, null);
++
++        SyncLiveness.Verdict v = eval(true, ClientStatus.RUNNING, h);
++
++        assertTrue(v.up());
++        assertEquals("ok", v.state());
++    }
++
++    @Test
++    void aFewFailuresButRecentSuccess_isStillUp() {
++        SyncHealth h = new SyncHealth(NOW.minusSeconds(600), NOW.minusSeconds(60), 3, "MatrixException: HTTP 500");
++
++        assertTrue(eval(true, ClientStatus.RUNNING, h).up());
++    }
++
++    @Test
++    void noSuccessForLongerThanTheLimit_isDownEvenWithoutAnyError() {
++        // Boucle bloquée : aucune erreur comptée, mais plus aucune réponse non plus
++        SyncHealth h = new SyncHealth(NOW.minusSeconds(3_600), NOW.minusSeconds(300), 0, null);
++
++        SyncLiveness.Verdict v = eval(true, ClientStatus.RUNNING, h);
++
++        assertFalse(v.up());
++        assertEquals("stalled", v.state());
++    }
++
++    @Test
++    void exactlyAtTheLimit_isStillUp() {
++        SyncHealth h = new SyncHealth(NOW.minusSeconds(600), NOW.minus(MAX), 0, null);
++
++        assertTrue(eval(true, ClientStatus.RUNNING, h).up());
++    }
++
++    @Test
++    void neverSucceeded_isMeasuredFromTheStart() {
++        SyncHealth recentStart = new SyncHealth(NOW.minusSeconds(30), null, 0, null);
++        SyncHealth oldStart = new SyncHealth(NOW.minusSeconds(300), null, 5, "MatrixException: HTTP 502");
++
++        assertTrue(eval(true, ClientStatus.RUNNING, recentStart).up());
++        assertFalse(eval(true, ClientStatus.RUNNING, oldStart).up());
++    }
++
++    @Test
++    void failedClient_isDown() {
++        assertFalse(eval(true, ClientStatus.FAILED, SyncHealth.notStarted()).up());
++    }
++
++    @Test
++    void notRunningYet_orStopping_isNotAFailure() {
++        for (ClientStatus status : new ClientStatus[] {
++                ClientStatus.NEW, ClientStatus.STARTING, ClientStatus.STOPPING, ClientStatus.STOPPED }) {
++            SyncLiveness.Verdict v = eval(true, status, SyncHealth.notStarted());
++
++            assertTrue(v.up(), status.name());
++            assertEquals("not-running", v.state());
++        }
++    }
++}

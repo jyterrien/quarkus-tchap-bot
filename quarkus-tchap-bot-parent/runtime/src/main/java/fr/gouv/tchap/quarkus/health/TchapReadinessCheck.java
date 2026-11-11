@@ -6,16 +6,21 @@ import fr.gouv.tchap.quarkus.config.TchapConfig;
 import fr.gouv.tchap.quarkus.rooms.TchapRoom;
 import fr.gouv.tchap.quarkus.rooms.TchapRooms;
 import jakarta.inject.Inject;
-
 import org.eclipse.microprofile.health.HealthCheck;
 import org.eclipse.microprofile.health.HealthCheckResponse;
 import org.eclipse.microprofile.health.HealthCheckResponseBuilder;
-import org.eclipse.microprofile.health.Liveness;
 import org.eclipse.microprofile.health.Readiness;
 
-@Liveness
+/**
+ * Le bot est-il prêt à travailler ? Exposé en readiness (/q/health/ready).
+ *
+ * <p>UP quand le client est démarré (ou que la synchronisation est désactivée, auquel cas il
+ * n'est jamais démarré). Les salons nommés sont listés à titre d'information : un salon facultatif
+ * indisponible ne rend pas le bot « non prêt ». La progression de la boucle /sync est le rôle de
+ * {@link TchapLivenessCheck}.
+ */
 @Readiness
-public class TchapHealthCheck implements HealthCheck {
+public class TchapReadinessCheck implements HealthCheck {
 
     @Inject
     MatrixClient client;
@@ -26,14 +31,11 @@ public class TchapHealthCheck implements HealthCheck {
     @Inject
     TchapRooms rooms;
 
-    //TODO: en double dans la réponse !!!
     @Override
     public HealthCheckResponse call() {
         ClientStatus status = client.status();
         boolean syncEnabled = config.sync().enabled();
-        // Sync désactivée : le client n'est jamais démarré, ce n'est pas une panne
         boolean up = !syncEnabled || status == ClientStatus.RUNNING;
-
 
         HealthCheckResponseBuilder r = HealthCheckResponse.named("tchap-bot")
             .status(up)
@@ -43,7 +45,6 @@ public class TchapHealthCheck implements HealthCheck {
         for (TchapRoom room : rooms.all()) {
             r.withData("room " + room.name(), room.isAvailable());
         }
-
         return r.build();
     }
 }
