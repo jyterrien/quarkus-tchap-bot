@@ -37,3 +37,12 @@ compile sans changement.
 Deux sondes distinctes, chacune dans son seul groupe (sinon elle apparaît en double dans `/q/health`) :
 `TchapReadinessCheck` (le client est démarré) et `TchapLivenessCheck` (la boucle `/sync` progresse, d'après
 `MatrixClient.syncHealth()`). Voir `docs/configuration.md`.
+
+## Authentification et renouvellement du token
+
+`MatrixHttpApi` ne garde plus de token : il interroge un `TokenProvider` à chaque appel. Deux implémentations :
+`StaticTokenProvider` (token fourni, non renouvelable) et `PasswordTokenProvider` (login, refresh, reconnexion,
+persistance dans un `CredentialStore`). Sur un refus du serveur (`MatrixServerException.isTokenRejected()`),
+`MatrixHttpApi` demande `renew(token)` puis rejoue la requête une seule fois ; les renouvellements simultanés sont
+fusionnés en un seul. Des identifiants refusés (`AuthenticationException`) arrêtent `SyncEngine`, qui prévient le
+client (`FAILED`). Voir `docs/configuration.md`.

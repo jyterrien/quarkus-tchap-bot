@@ -6,9 +6,11 @@ import static java.lang.System.Logger.Level.WARNING;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gouv.tchap.matrix.auth.Session;
+import fr.gouv.tchap.matrix.auth.TokenProvider;
 import fr.gouv.tchap.matrix.client.ClientStatus;
 import fr.gouv.tchap.matrix.client.MatrixClient;
 import fr.gouv.tchap.matrix.core.auth.DefaultSession;
+import fr.gouv.tchap.matrix.core.auth.StaticTokenProvider;
 import fr.gouv.tchap.matrix.core.message.DefaultMessageService;
 import fr.gouv.tchap.matrix.core.message.UuidTransactionIdGenerator;
 import fr.gouv.tchap.matrix.core.room.DefaultMatrixRoom;
@@ -33,7 +35,7 @@ public class DefaultMatrixClient implements MatrixClient {
 	private static final System.Logger LOG = System.getLogger(DefaultMatrixClient.class.getName());
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 
-	private final String accessToken;
+	private final TokenProvider tokens;
 	private final MatrixHttpApi api;
 	private final AtomicReference<Session> session;
 	private final MessageService messageService;
@@ -49,16 +51,34 @@ public class DefaultMatrixClient implements MatrixClient {
 
 	public DefaultMatrixClient(HttpTransport transport, String accessToken, String userId, SyncTokenStore tokenStore,
 			Consumer<MatrixEvent> eventConsumer, MatrixClientOptions options) {
-		this.accessToken = accessToken;
-		this.api = new MatrixHttpApi(transport, accessToken);
+		this(transport, new StaticTokenProvider(accessToken), userId, tokenStore, eventConsumer, options,
+				new DefaultSession(userId, null, accessToken));
+	}
+
+	/**
+	 * Token géré par un {@link TokenProvider} (connexion par mot de passe,
+	 * renouvellement). La session n'est connue qu'après {@link #verifySession()}.
+	 */
+	public DefaultMatrixClient(HttpTransport transport, TokenProvider tokens, String userId, SyncTokenStore tokenStore,
+			Consumer<MatrixEvent> eventConsumer, MatrixClientOptions options) {
+		this(transport, tokens, userId, tokenStore, eventConsumer, options, new DefaultSession(userId, null, null));
+	}
+
+	private DefaultMatrixClient(HttpTransport transport, TokenProvider tokens, String userId, SyncTokenStore tokenStore,
+			Consumer<MatrixEvent> eventConsumer, MatrixClientOptions options, Session initialSession) {
+		this.tokens = tokens;
+		this.api = new MatrixHttpApi(transport, tokens);
 		RoomService rooms = new DefaultRoomService(api);
-		this.session = new AtomicReference<>(new DefaultSession(userId, null, accessToken));
+		this.session = new AtomicReference<>(initialSession);
 		this.messageService = new DefaultMessageService(api, new UuidTransactionIdGenerator());
 		this.roomService = rooms;
 
 		Consumer<String> inviteHandler = options.autoJoinInvites() ? roomId -> autoJoin(rooms, roomId) : null;
 		this.syncEngine = new SyncEngine(api, tokenStore, eventConsumer, inviteHandler, options.initialLimit(),
 				options.syncTimeoutMs());
+		// Identifiants refusés : le client passe en FAILED (sondes de santé DOWN)
+		this.syncEngine.onFatalError(cause -> status
+				.updateAndGet(s -> s == ClientStatus.STOPPING || s == ClientStatus.STOPPED ? s : ClientStatus.FAILED));
 	}
 
 	private static void autoJoin(RoomService rooms, String roomId) {
@@ -82,7 +102,7 @@ public class DefaultMatrixClient implements MatrixClient {
 
 	@Override
 	public CompletionStage<Session> verifySession() {
-		return api.whoami().thenApply(json -> {
+		return api.whoami().thenCompose(json -> tokens.accessToken().thenApply(accessToken -> {
 			JsonNode node;
 			try {
 				node = MAPPER.readTree(json);
@@ -96,13 +116,15 @@ public class DefaultMatrixClient implements MatrixClient {
 			Session verified = new DefaultSession(userId, node.path("device_id").asText(null), accessToken);
 			session.set(verified);
 			return verified;
-		});
+		}));
 	}
 
 	@Override
 	public CompletionStage<Void> start() {
 		status.set(ClientStatus.STARTING);
-		return syncEngine.start().thenRun(() -> status.set(ClientStatus.RUNNING));
+		// compareAndSet : une panne définitive survenue pendant le démarrage ne doit
+		// pas être écrasée
+		return syncEngine.start().thenRun(() -> status.compareAndSet(ClientStatus.STARTING, ClientStatus.RUNNING));
 	}
 
 	@Override

@@ -3,6 +3,7 @@ package fr.gouv.tchap.matrix.transport.http;
 import static java.lang.System.Logger.Level.WARNING;
 
 import fr.gouv.tchap.matrix.exception.MatrixException;
+import fr.gouv.tchap.matrix.exception.MatrixServerException;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
 import io.vertx.core.Context;
@@ -10,6 +11,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
@@ -76,19 +78,18 @@ public class VertxHttpTransport implements HttpTransport {
 
 	@Override
 	public CompletionStage<String> get(String path, String accessToken) {
-		return call(
-				() -> client.getAbs(homeserverUrl + path).putHeader("Authorization", "Bearer " + accessToken).send());
+		return call(() -> withAuth(client.getAbs(homeserverUrl + path), accessToken).send());
 	}
 
 	@Override
 	public CompletionStage<String> put(String path, String accessToken, String jsonBody) {
-		return call(() -> client.putAbs(homeserverUrl + path).putHeader("Authorization", "Bearer " + accessToken)
+		return call(() -> withAuth(client.putAbs(homeserverUrl + path), accessToken)
 				.putHeader("Content-Type", "application/json").sendBuffer(body(jsonBody)));
 	}
 
 	@Override
 	public CompletionStage<String> post(String path, String accessToken, String jsonBody) {
-		return call(() -> client.postAbs(homeserverUrl + path).putHeader("Authorization", "Bearer " + accessToken)
+		return call(() -> withAuth(client.postAbs(homeserverUrl + path), accessToken)
 				.putHeader("Content-Type", "application/json").sendBuffer(body(jsonBody)));
 	}
 
@@ -116,6 +117,38 @@ public class VertxHttpTransport implements HttpTransport {
 		} catch (Exception e) {
 			LOG.log(WARNING, "Error while closing Vert.x", e);
 		}
+	}
+
+	/**
+	 * Sans token (null ou vide), aucun en-tête Authorization : {@code /login} et
+	 * {@code /refresh} n'en veulent pas.
+	 */
+	private static <T> HttpRequest<T> withAuth(HttpRequest<T> request, String accessToken) {
+		if (accessToken != null && !accessToken.isBlank()) {
+			request.putHeader("Authorization", "Bearer " + accessToken);
+		}
+		return request;
+	}
+
+	/**
+	 * Message « HTTP code: corps » ; errcode et soft_logout sont lus dans le corps
+	 * JSON quand il y en a un.
+	 */
+	private static MatrixServerException serverError(int code, HttpResponse<Buffer> resp) {
+		String errcode = null;
+		boolean softLogout = false;
+		try {
+			Buffer body = resp.body();
+			if (body != null) {
+				JsonObject json = new JsonObject(body);
+				errcode = json.getString("errcode");
+				softLogout = Boolean.TRUE.equals(json.getBoolean("soft_logout"));
+			}
+		} catch (RuntimeException e) {
+			// corps vide, non JSON ou champs d'un autre type : l'erreur reste utilisable
+			// sans errcode
+		}
+		return new MatrixServerException("HTTP " + code + ": " + resp.bodyAsString(), code, errcode, softLogout);
 	}
 
 	private static Buffer body(String jsonBody) {
@@ -153,7 +186,7 @@ public class VertxHttpTransport implements HttpTransport {
 				result.completeExceptionally(
 						new RateLimitException("HTTP 429 rate limited", parseRetryAfterMillis(resp)));
 			} else if (code >= 400) {
-				result.completeExceptionally(new MatrixException("HTTP " + code + ": " + resp.bodyAsString()));
+				result.completeExceptionally(serverError(code, resp));
 			} else {
 				result.complete(resp.bodyAsString());
 			}

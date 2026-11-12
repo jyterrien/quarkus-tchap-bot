@@ -1,6 +1,9 @@
 package fr.gouv.tchap.quarkus.deployment;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.any;
+import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
@@ -127,7 +130,66 @@ final class FakeHomeserver implements AutoCloseable {
 		return this;
 	}
 
+	/**
+	 * {@code POST /login} réussit : token d'accès, token de renouvellement et durée
+	 * de validité (0 = pas d'expiration annoncée).
+	 */
+	FakeHomeserver login(String accessToken, String refreshToken, long expiresInMs) {
+		server.stubFor(post(urlPathEqualTo(PREFIX + "login")).willReturn(okJson("{\"access_token\":\"" + accessToken
+				+ "\",\"device_id\":\"DEV1\",\"user_id\":\"@bot:s\",\"refresh_token\":\"" + refreshToken + "\""
+				+ (expiresInMs > 0 ? ",\"expires_in_ms\":" + expiresInMs : "") + "}")));
+		return this;
+	}
+
+	/** {@code POST /login} est refusé : 403 M_FORBIDDEN (mauvais mot de passe). */
+	FakeHomeserver loginForbidden() {
+		server.stubFor(post(urlPathEqualTo(PREFIX + "login"))
+				.willReturn(aResponse().withStatus(403).withHeader("Content-Type", "application/json")
+						.withBody("{\"errcode\":\"M_FORBIDDEN\",\"error\":\"Invalid username or password\"}")));
+		return this;
+	}
+
+	/** {@code POST /refresh} réussit. */
+	FakeHomeserver refresh(String accessToken, String refreshToken, long expiresInMs) {
+		server.stubFor(post(urlPathEqualTo(PREFIX + "refresh")).willReturn(okJson("{\"access_token\":\"" + accessToken
+				+ "\",\"refresh_token\":\"" + refreshToken + "\",\"expires_in_ms\":" + expiresInMs + "}")));
+		return this;
+	}
+
+	/**
+	 * Toute requête portant ce token d'accès est refusée : 401 M_UNKNOWN_TOKEN
+	 * (token expiré). À appeler après les autres stubs : le dernier stub déclaré
+	 * l'emporte.
+	 */
+	FakeHomeserver rejectToken(String accessToken) {
+		server.stubFor(any(urlPathMatching(PREFIX + ".*")).withHeader("Authorization", equalTo("Bearer " + accessToken))
+				.willReturn(aResponse().withStatus(401).withHeader("Content-Type", "application/json").withBody(
+						"{\"errcode\":\"M_UNKNOWN_TOKEN\",\"error\":\"Access token has expired\",\"soft_logout\":true}")));
+		return this;
+	}
+
 	// ---- Requêtes reçues (dans l'ordre d'arrivée) ----
+
+	/** Corps JSON des {@code POST /login} reçus. */
+	List<String> logins() {
+		return received(postRequestedFor(urlPathEqualTo(PREFIX + "login"))).stream().map(LoggedRequest::getBodyAsString)
+				.toList();
+	}
+
+	/** Corps JSON des {@code POST /refresh} reçus. */
+	List<String> refreshes() {
+		return received(postRequestedFor(urlPathEqualTo(PREFIX + "refresh"))).stream()
+				.map(LoggedRequest::getBodyAsString).toList();
+	}
+
+	/**
+	 * En-têtes Authorization des requêtes join, sync et envoi, dans l'ordre
+	 * d'arrivée.
+	 */
+	List<String> authorizations() {
+		return received(anyRequestedFor(urlPathMatching(PREFIX + "(join/.*|sync|rooms/.*)"))).stream()
+				.map(request -> request.getHeader("Authorization")).toList();
+	}
 
 	/** Cibles des join reçus, décodées (ex. {@code #oncall:s}, {@code !room:s}). */
 	List<String> joins() {

@@ -58,7 +58,7 @@ class TchapMessageMapperTest {
 
 	@Test
 	void keepsEverything_whenBotUserIdUnknown() {
-		TchapMessageMapper mapper = new TchapMessageMapper(true, null);
+		TchapMessageMapper mapper = new TchapMessageMapper(true, (String) null);
 
 		assertTrue(mapper.map(event("m.room.message", BOT, "{\"body\":\"echo\"}")).isPresent());
 	}
@@ -116,5 +116,18 @@ class TchapMessageMapperTest {
 
 		assertNull(m.threadRootId());
 		assertFalse(m.isInThread());
+	}
+
+	@Test
+	void botUserId_canBeResolvedLate_asWhenLoggingInWithAPassword() {
+		java.util.concurrent.atomic.AtomicReference<String> self = new java.util.concurrent.atomic.AtomicReference<>(
+				"@bot.fr:s");
+		TchapMessageMapper mapper = new TchapMessageMapper(true, self::get);
+		MatrixEvent fromServerId = event("m.room.message", "@bot:s", "{\"body\":\"echo\"}");
+
+		assertTrue(mapper.map(fromServerId).isPresent(), "identifiant du serveur pas encore connu");
+
+		self.set("@bot:s"); // connexion faite : le serveur a donné l'identifiant réel
+		assertTrue(mapper.map(fromServerId).isEmpty());
 	}
 }

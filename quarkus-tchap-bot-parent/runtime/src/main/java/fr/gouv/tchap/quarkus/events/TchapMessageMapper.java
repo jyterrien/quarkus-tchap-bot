@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 
 /**
@@ -22,9 +23,17 @@ public class TchapMessageMapper {
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 
 	private final boolean ignoreSelf;
-	private final String botUserId;
+	private final Supplier<String> botUserId;
 
 	public TchapMessageMapper(boolean ignoreSelf, String botUserId) {
+		this(ignoreSelf, () -> botUserId);
+	}
+
+	/**
+	 * L'identifiant du bot est demandé à chaque événement : en connexion par mot de
+	 * passe il n'est connu qu'une fois connecté.
+	 */
+	public TchapMessageMapper(boolean ignoreSelf, Supplier<String> botUserId) {
 		this.ignoreSelf = ignoreSelf;
 		this.botUserId = botUserId;
 	}
@@ -32,7 +41,8 @@ public class TchapMessageMapper {
 	public Optional<TchapMessage> map(MatrixEvent ev) {
 		LOG.debugf("Matrix event: type=%s room=%s sender=%s", ev.type(), ev.roomId(), ev.sender());
 
-		if (ignoreSelf && botUserId != null && botUserId.equals(ev.sender())) {
+		String self = botUserId.get();
+		if (ignoreSelf && self != null && self.equals(ev.sender())) {
 			return Optional.empty();
 		}
 		if (!"m.room.message".equals(ev.type())) {

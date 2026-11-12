@@ -7,6 +7,7 @@ import static java.lang.System.Logger.Level.WARNING;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
+import fr.gouv.tchap.matrix.exception.AuthenticationException;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import fr.gouv.tchap.matrix.sync.SyncHealth;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
@@ -72,6 +73,12 @@ public class SyncEngine {
 	private volatile Instant lastSuccess;
 	private volatile String lastError;
 	private final AtomicInteger consecutiveFailures = new AtomicInteger();
+
+	/**
+	 * Appelé une fois si la boucle s'arrête d'elle-même sur une erreur définitive.
+	 */
+	private volatile Consumer<Throwable> fatalErrorHandler = t -> {
+	};
 
 	/**
 	 * Salons suivis. Vide = tous les salons du compte. Remplacé atomiquement,
@@ -178,6 +185,25 @@ public class SyncEngine {
 		}
 	}
 
+	/**
+	 * Déclare la boucle arrêtée par une erreur définitive (ex. identifiants
+	 * refusés) : plus aucune requête, et {@code handler} est prévenu pour que le
+	 * client passe en échec.
+	 */
+	public void onFatalError(Consumer<Throwable> handler) {
+		this.fatalErrorHandler = handler == null ? t -> {
+		} : handler;
+	}
+
+	private void fail(Throwable cause) {
+		LOG.log(ERROR, "Sync stopped: " + cause.getMessage(), cause);
+		running.set(false);
+		ScheduledExecutorService ex = executor;
+		if (ex != null)
+			ex.shutdownNow();
+		fatalErrorHandler.accept(cause);
+	}
+
 	private void doSync() {
 		if (!running.get())
 			return;
@@ -186,6 +212,12 @@ public class SyncEngine {
 					Throwable cause = unwrap(ex);
 					consecutiveFailures.incrementAndGet();
 					lastError = describe(cause);
+					if (cause instanceof AuthenticationException) {
+						// Identifiants refusés : réessayer ne servirait à rien, et marteler le serveur
+						// (nouveau login toutes les 5 s) risque de verrouiller le compte
+						fail(cause);
+						return null;
+					}
 					long delay = retryDelayMs(cause);
 					if (cause instanceof RateLimitException) {
 						LOG.log(WARNING, "Rate limited by homeserver, retrying in " + delay + " ms");

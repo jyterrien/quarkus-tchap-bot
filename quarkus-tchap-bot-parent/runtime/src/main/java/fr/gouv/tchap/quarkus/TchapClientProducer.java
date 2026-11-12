@@ -1,6 +1,12 @@
 package fr.gouv.tchap.quarkus;
 
+import fr.gouv.tchap.matrix.auth.CredentialStore;
+import fr.gouv.tchap.matrix.auth.TokenProvider;
 import fr.gouv.tchap.matrix.client.MatrixClient;
+import fr.gouv.tchap.matrix.core.auth.FileCredentialStore;
+import fr.gouv.tchap.matrix.core.auth.InMemoryCredentialStore;
+import fr.gouv.tchap.matrix.core.auth.PasswordTokenProvider;
+import fr.gouv.tchap.matrix.core.auth.StaticTokenProvider;
 import fr.gouv.tchap.matrix.core.client.DefaultMatrixClient;
 import fr.gouv.tchap.matrix.core.client.MatrixClientOptions;
 import fr.gouv.tchap.matrix.core.sync.FileSyncTokenStore;
@@ -21,6 +27,7 @@ import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
 import java.nio.file.Path;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 
 @ApplicationScoped
@@ -43,6 +50,21 @@ public class TchapClientProducer {
 		};
 	}
 
+	/**
+	 * Magasin des identifiants (mode {@code password}) selon
+	 * {@code quarkus.tchap.auth.store}. {@code @DefaultBean} : une application peut
+	 * fournir son propre bean CredentialStore, qui remplace alors celui-ci.
+	 */
+	@Produces
+	@Singleton
+	@DefaultBean
+	public CredentialStore credentialStore(TchapConfig config) {
+		return switch (config.auth().store()) {
+			case MEMORY -> new InMemoryCredentialStore();
+			case FILE -> new FileCredentialStore(Path.of(config.auth().storePath()));
+		};
+	}
+
 	@Produces
 	@Singleton
 	public HttpTransport httpTransport(TchapConfig config, Vertx vertx) {
@@ -57,10 +79,38 @@ public class TchapClientProducer {
 	@Singleton
 	@Startup
 	public MatrixClient matrixClient(TchapConfig config, HttpTransport httpTransport, SyncTokenStore tokenStore,
-			TchapEventPublisher publisher) {
-		String token = config.accessToken()
-				.orElseThrow(() -> new IllegalStateException("quarkus.tchap.access-token is required"));
+			CredentialStore credentialStore, TchapEventPublisher publisher) {
 		String userId = config.userId().orElse(null);
+		TokenProvider tokens;
+		// Identifiant du bot pour ignorer ses propres messages : en mode password,
+		// celui
+		// que le serveur renvoie à la connexion (il peut différer de l'identifiant de
+		// connexion configuré)
+		Supplier<String> selfId;
+
+		switch (config.auth().mode()) {
+			case PASSWORD -> {
+				String login = userId;
+				String password = config.auth().password().orElse(null);
+				if (login == null || password == null) {
+					throw new IllegalStateException(
+							"quarkus.tchap.user-id and quarkus.tchap.auth.password are required when "
+									+ "quarkus.tchap.auth.mode=password");
+				}
+				PasswordTokenProvider provider = new PasswordTokenProvider(httpTransport, login, password,
+						credentialStore, config.auth().deviceName());
+				tokens = provider;
+				selfId = () -> provider.serverUserId().orElse(login);
+			}
+			case TOKEN -> {
+				String token = config.accessToken()
+						.orElseThrow(() -> new IllegalStateException("quarkus.tchap.access-token is required "
+								+ "(or set quarkus.tchap.auth.mode=password to log in with a password)"));
+				tokens = new StaticTokenProvider(token);
+				selfId = () -> userId;
+			}
+			default -> throw new IllegalStateException("Unsupported auth mode: " + config.auth().mode());
+		}
 
 		boolean ignoreSelf = config.bot().ignoreSelfMessages();
 		if (ignoreSelf && userId == null) {
@@ -68,12 +118,12 @@ public class TchapClientProducer {
 					+ "has no effect and the bot will receive its own messages");
 		}
 
-		TchapMessageMapper mapper = new TchapMessageMapper(ignoreSelf, userId);
+		TchapMessageMapper mapper = new TchapMessageMapper(ignoreSelf, selfId);
 		Consumer<MatrixEvent> consumer = ev -> mapper.map(ev).ifPresent(publisher::publish);
 
 		MatrixClientOptions options = new MatrixClientOptions(config.sync().initialLimit(), config.sync().timeout(),
 				config.bot().autoJoinInvitedRooms());
 
-		return new DefaultMatrixClient(httpTransport, token, userId, tokenStore, consumer, options);
+		return new DefaultMatrixClient(httpTransport, tokens, userId, tokenStore, consumer, options);
 	}
 }

@@ -3,6 +3,7 @@ package fr.gouv.tchap.matrix.transport.http;
 import static org.junit.jupiter.api.Assertions.*;
 
 import fr.gouv.tchap.matrix.exception.MatrixException;
+import fr.gouv.tchap.matrix.exception.MatrixServerException;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -204,6 +205,59 @@ class VertxHttpTransportTest {
 		assertFalse(cause instanceof RateLimitException);
 		assertTrue(cause.getMessage().contains("HTTP 500"));
 		assertTrue(cause.getMessage().contains("M_UNKNOWN"));
+	}
+
+	@Test
+	void status401_exposesErrcodeAndSoftLogout() {
+		String url = startServer(req -> req.response().setStatusCode(401).putHeader("Content-Type", "application/json")
+				.end("{\"errcode\":\"M_UNKNOWN_TOKEN\",\"error\":\"Token expired\",\"soft_logout\":true}"));
+
+		Throwable failure = failureOf(transport(url).get("/_matrix/client/v3/sync", "old"));
+
+		MatrixServerException server = assertInstanceOf(MatrixServerException.class, failure);
+		assertEquals(401, server.statusCode());
+		assertEquals("M_UNKNOWN_TOKEN", server.errcode());
+		assertTrue(server.softLogout());
+		assertTrue(server.isTokenRejected());
+		assertTrue(server.getMessage().startsWith("HTTP 401: "), server.getMessage());
+	}
+
+	@Test
+	void status403_withoutJsonBody_isStillAServerExceptionWithoutErrcode() {
+		String url = startServer(req -> req.response().setStatusCode(403).end("forbidden"));
+
+		MatrixServerException server = assertInstanceOf(MatrixServerException.class,
+				failureOf(transport(url).post("/_matrix/client/v3/login", null, "{}")));
+
+		assertEquals(403, server.statusCode());
+		assertNull(server.errcode());
+		assertFalse(server.softLogout());
+		assertFalse(server.isTokenRejected());
+		assertTrue(server.isClientError());
+	}
+
+	@Test
+	void status500_isNotAClientError() {
+		String url = startServer(req -> req.response().setStatusCode(500).end("{}"));
+
+		MatrixServerException server = assertInstanceOf(MatrixServerException.class,
+				failureOf(transport(url).get("/x", "tok")));
+
+		assertFalse(server.isClientError());
+		assertFalse(server.isTokenRejected());
+	}
+
+	@Test
+	void post_withoutToken_sendsNoAuthorizationHeader() {
+		AtomicReference<String> auth = new AtomicReference<>("unset");
+		String url = startServer(req -> {
+			auth.set(req.getHeader("Authorization"));
+			req.response().setStatusCode(200).end("{}");
+		});
+
+		transport(url).post("/_matrix/client/v3/login", null, "{}").toCompletableFuture().join();
+
+		assertNull(auth.get());
 	}
 
 	@Test

@@ -21,13 +21,16 @@ public interface TchapConfig {
 	URI homeserverUrl();
 
 	/**
-	 * Token d'accès du bot (fourni par le homeserver).
+	 * Token d'accès du bot (fourni par le homeserver). Requis quand
+	 * {@code quarkus.tchap.auth.mode=token} (défaut) ; ignoré en mode
+	 * {@code password}.
 	 */
 	@WithName("access-token")
 	Optional<String> accessToken();
 
 	/**
-	 * Identifiant Matrix du bot (ex: @monbot:tchap.gouv.fr).
+	 * Identifiant Matrix du bot (ex: @monbot:tchap.gouv.fr). En mode
+	 * {@code password}, c'est l'identifiant de connexion.
 	 */
 	@WithName("user-id")
 	Optional<String> userId();
@@ -39,6 +42,12 @@ public interface TchapConfig {
 	 * aucun salon déclaré, le client suit tous les salons du compte.
 	 */
 	Map<String, RoomConfig> rooms();
+
+	/**
+	 * Configuration de l'authentification (token fourni, ou connexion par mot de
+	 * passe avec renouvellement automatique).
+	 */
+	AuthConfig auth();
 
 	/**
 	 * Configuration de la synchronisation Matrix.
@@ -74,6 +83,59 @@ public interface TchapConfig {
 		 */
 		@WithDefault("true")
 		boolean required();
+	}
+
+	interface AuthConfig {
+
+		/**
+		 * {@code token} (défaut) : le token d'accès est fourni
+		 * ({@code quarkus.tchap.access-token}) et n'est jamais renouvelé ; s'il expire,
+		 * le bot s'arrête en erreur. {@code password} : le bot se connecte avec
+		 * {@code quarkus.tchap.user-id} et {@code quarkus.tchap.auth.password}, puis
+		 * renouvelle seul son token (refresh token, ou nouvelle connexion).
+		 */
+		@WithDefault("token")
+		Mode mode();
+
+		/**
+		 * Mot de passe du bot (mode {@code password}). À fournir par variable
+		 * d'environnement ou secret, jamais en clair dans un fichier versionné.
+		 */
+		Optional<String> password();
+
+		/**
+		 * Nom de l'appareil affiché pour la session du bot (mode {@code password}).
+		 */
+		@WithName("device-name")
+		@WithDefault("quarkus-tchap-bot")
+		String deviceName();
+
+		/**
+		 * Stockage des identifiants (token d'accès, refresh token, device) en mode
+		 * {@code password}. {@code memory} : nouvelle connexion à chaque démarrage (un
+		 * nouvel appareil à chaque fois si le serveur n'en réutilise pas). {@code file}
+		 * : voir {@code store-path}. Pour un autre stockage (base de données, etc.),
+		 * fournir son propre bean {@code CredentialStore} : il remplace celui de
+		 * l'extension.
+		 */
+		@WithDefault("memory")
+		StoreType store();
+
+		/**
+		 * Chemin du fichier des identifiants quand {@code store=file}. Il contient des
+		 * secrets : le créer hors du dépôt, lisible par son seul propriétaire.
+		 */
+		@WithName("store-path")
+		@WithDefault(".tchap/credentials.json")
+		String storePath();
+
+		enum Mode {
+			TOKEN, PASSWORD
+		}
+
+		enum StoreType {
+			MEMORY, FILE
+		}
 	}
 
 	interface SyncConfig {
