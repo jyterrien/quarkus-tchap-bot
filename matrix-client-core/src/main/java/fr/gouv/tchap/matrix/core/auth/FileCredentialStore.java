@@ -20,6 +20,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Persiste les identifiants dans un fichier JSON, pour que le bot reprenne sa
@@ -28,11 +30,20 @@ import java.util.concurrent.Executors;
  * seul propriétaire quand le système de fichiers le permet. Les accès disque
  * s'exécutent sur un thread dédié, dans l'ordre ; l'écriture est atomique
  * (fichier temporaire puis renommage).
+ *
+ * Le thread d'écriture appartient à l'instance : {@link #close()} termine les
+ * écritures déjà en attente puis le libère. C'est important ici : le refresh
+ * token est à usage unique, et perdre la dernière écriture à l'arrêt oblige à
+ * se reconnecter avec le mot de passe au démarrage suivant. Après
+ * {@code close()}, {@code save} et {@code load} échouent.
  */
-public class FileCredentialStore implements CredentialStore {
+public class FileCredentialStore implements CredentialStore, AutoCloseable {
 
+	private static final System.Logger LOG = System.getLogger(FileCredentialStore.class.getName());
 	private static final ObjectMapper MAPPER = new ObjectMapper();
-	private static final ExecutorService IO = Executors.newSingleThreadExecutor(r -> {
+	private static final long CLOSE_TIMEOUT_SEC = 5;
+
+	private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
 		Thread t = new Thread(r, "tchap-credentials-io");
 		t.setDaemon(true);
 		return t;
@@ -46,7 +57,7 @@ public class FileCredentialStore implements CredentialStore {
 
 	@Override
 	public CompletionStage<Optional<Credentials>> load() {
-		return CompletableFuture.supplyAsync(() -> {
+		return submit(() -> CompletableFuture.supplyAsync(() -> {
 			try {
 				if (!Files.exists(file)) {
 					return Optional.<Credentials>empty();
@@ -66,14 +77,14 @@ public class FileCredentialStore implements CredentialStore {
 						expiresAt == null ? null : Instant.parse(expiresAt)));
 			} catch (IOException | RuntimeException e) {
 				throw new UncheckedIOException("Cannot read credentials file " + file,
-						e instanceof IOException io ? io : new IOException(e));
+						e instanceof IOException ioe ? ioe : new IOException(e));
 			}
-		}, IO);
+		}, io));
 	}
 
 	@Override
 	public CompletionStage<Void> save(Credentials credentials) {
-		return CompletableFuture.runAsync(() -> {
+		return submit(() -> CompletableFuture.runAsync(() -> {
 			try {
 				Path parent = file.getParent();
 				if (parent != null) {
@@ -99,7 +110,38 @@ public class FileCredentialStore implements CredentialStore {
 			} catch (IOException e) {
 				throw new UncheckedIOException("Cannot write credentials file " + file, e);
 			}
-		}, IO);
+		}, io));
+	}
+
+	/**
+	 * Un magasin fermé échoue proprement au lieu de lever depuis le thread
+	 * appelant.
+	 */
+	private <T> CompletionStage<T> submit(java.util.function.Supplier<CompletionStage<T>> task) {
+		try {
+			return task.get();
+		} catch (RejectedExecutionException e) {
+			return CompletableFuture.failedFuture(new IllegalStateException("Credential store is closed", e));
+		}
+	}
+
+	/**
+	 * Termine les écritures en attente (au plus {@value #CLOSE_TIMEOUT_SEC} s) puis
+	 * arrête le thread d'écriture. Idempotent.
+	 */
+	@Override
+	public void close() {
+		io.shutdown();
+		try {
+			if (!io.awaitTermination(CLOSE_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+				LOG.log(System.Logger.Level.WARNING, "Credential store: pending writes not finished after {0} s",
+						CLOSE_TIMEOUT_SEC);
+				io.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			io.shutdownNow();
+			Thread.currentThread().interrupt();
+		}
 	}
 
 	/** rw------- quand le système est POSIX ; sinon permissions par défaut. */

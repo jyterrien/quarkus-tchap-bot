@@ -84,4 +84,29 @@ class FileCredentialStoreTest {
 		assertThrows(CompletionException.class,
 				() -> new FileCredentialStore(corrupt).load().toCompletableFuture().join());
 	}
+
+	@Test
+	void close_finishesThePendingWrites_soTheLastRefreshTokenIsNotLost() {
+		Path file = dir.resolve("c.json");
+		FileCredentialStore store = new FileCredentialStore(file);
+
+		store.save(SAMPLE); // volontairement sans attendre
+		store.save(new Credentials("@bot.fr:srv", "@bot:srv", "DEV1", "at2", "rt2", null));
+		store.close();
+
+		Credentials loaded = new FileCredentialStore(file).load().toCompletableFuture().join().orElseThrow();
+		assertEquals("rt2", loaded.refreshToken());
+	}
+
+	@Test
+	void afterClose_saveFailsCleanly_andCloseIsIdempotent() {
+		FileCredentialStore store = new FileCredentialStore(dir.resolve("c.json"));
+		store.close();
+		store.close();
+
+		CompletionException failure = assertThrows(CompletionException.class,
+				() -> store.save(SAMPLE).toCompletableFuture().join());
+
+		assertInstanceOf(IllegalStateException.class, failure.getCause());
+	}
 }

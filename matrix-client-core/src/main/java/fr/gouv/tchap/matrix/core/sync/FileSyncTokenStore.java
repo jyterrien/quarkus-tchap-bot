@@ -14,6 +14,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Persiste le token de synchronisation dans un fichier, pour reprendre après un
@@ -21,10 +23,18 @@ import java.util.concurrent.Executors;
  * l'historique). Les accès disque s'exécutent sur un thread dédié, dans l'ordre
  * : ils ne bloquent jamais l'appelant (save() est appelé depuis l'event loop
  * Vert.x). L'écriture est atomique (fichier temporaire puis renommage).
+ *
+ * Le thread d'écriture appartient à l'instance : {@link #close()} termine les
+ * écritures déjà en attente (le dernier token ne doit pas se perdre à l'arrêt)
+ * puis libère le thread. Après {@code close()}, {@code save} et {@code load}
+ * échouent.
  */
-public class FileSyncTokenStore implements SyncTokenStore {
+public class FileSyncTokenStore implements SyncTokenStore, AutoCloseable {
 
-	private static final ExecutorService IO = Executors.newSingleThreadExecutor(r -> {
+	private static final System.Logger LOG = System.getLogger(FileSyncTokenStore.class.getName());
+	private static final long CLOSE_TIMEOUT_SEC = 5;
+
+	private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
 		Thread t = new Thread(r, "tchap-token-io");
 		t.setDaemon(true);
 		return t;
@@ -38,7 +48,7 @@ public class FileSyncTokenStore implements SyncTokenStore {
 
 	@Override
 	public CompletionStage<Optional<String>> load() {
-		return CompletableFuture.supplyAsync(() -> {
+		return submit(() -> CompletableFuture.supplyAsync(() -> {
 			try {
 				if (!Files.exists(file))
 					return Optional.<String>empty();
@@ -47,12 +57,12 @@ public class FileSyncTokenStore implements SyncTokenStore {
 			} catch (IOException e) {
 				throw new UncheckedIOException("Cannot read sync token file " + file, e);
 			}
-		}, IO);
+		}, io));
 	}
 
 	@Override
 	public CompletionStage<Void> save(String token) {
-		return CompletableFuture.runAsync(() -> {
+		return submit(() -> CompletableFuture.runAsync(() -> {
 			try {
 				Path parent = file.getParent();
 				if (parent != null)
@@ -67,6 +77,37 @@ public class FileSyncTokenStore implements SyncTokenStore {
 			} catch (IOException e) {
 				throw new UncheckedIOException("Cannot write sync token file " + file, e);
 			}
-		}, IO);
+		}, io));
+	}
+
+	/**
+	 * Un magasin fermé échoue proprement au lieu de lever depuis le thread
+	 * appelant.
+	 */
+	private <T> CompletionStage<T> submit(java.util.function.Supplier<CompletionStage<T>> task) {
+		try {
+			return task.get();
+		} catch (RejectedExecutionException e) {
+			return CompletableFuture.failedFuture(new IllegalStateException("Sync token store is closed", e));
+		}
+	}
+
+	/**
+	 * Termine les écritures en attente (au plus {@value #CLOSE_TIMEOUT_SEC} s) puis
+	 * arrête le thread d'écriture. Idempotent.
+	 */
+	@Override
+	public void close() {
+		io.shutdown();
+		try {
+			if (!io.awaitTermination(CLOSE_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+				LOG.log(System.Logger.Level.WARNING, "Sync token store: pending writes not finished after {0} s",
+						CLOSE_TIMEOUT_SEC);
+				io.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			io.shutdownNow();
+			Thread.currentThread().interrupt();
+		}
 	}
 }

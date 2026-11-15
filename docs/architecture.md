@@ -46,3 +46,26 @@ persistance dans un `CredentialStore`). Sur un refus du serveur (`MatrixServerEx
 `MatrixHttpApi` demande `renew(token)` puis rejoue la requête une seule fois ; les renouvellements simultanés sont
 fusionnés en un seul. Des identifiants refusés (`AuthenticationException`) arrêtent `SyncEngine`, qui prévient le
 client (`FAILED`). Voir `docs/configuration.md`.
+
+## Arrêt et tâches de fond
+
+Le bot n'a pas de tâche planifiée de renouvellement du token : le renouvellement est fait à la demande (juste
+avant une requête dont le token est proche de l'expiration, ou après un refus du serveur), donc rien à arrêter de
+ce côté. Les seuls threads propres au bot sont `tchap-sync` (boucle `/sync`) et les threads d'écriture des
+magasins de fichiers (`tchap-token-io`, `tchap-credentials-io`).
+
+À l'arrêt de Quarkus, dans l'ordre :
+
+1. `TchapLifecycle` (sur `ShutdownEvent`) arrête le client : la boucle ne relance plus rien.
+2. La requête de long polling déjà partie ne peut pas être annulée ; elle échoue quand le transport se ferme, ou
+   aboutit après coup. `SyncEngine` l'ignore (numéro de génération incrémenté à chaque `start()`/`stop()`) :
+   pas d'échec compté, pas de message journalisé en WARN, pas d'événement livré, pas de nouveau token
+   sauvegardé. Le même garde empêche une requête de l'ancienne boucle de relancer une seconde boucle après un
+   redémarrage.
+3. Les magasins créés par l'extension (`SyncTokenStore`, `CredentialStore`) sont fermés : les écritures en
+   attente, notamment le dernier refresh token, sont terminées avant l'arrêt du thread. Un magasin fourni par
+   l'application n'est pas fermé par l'extension.
+4. Le transport est fermé.
+
+Les observers des événements CDI s'exécutent sur le pool de workers de Quarkus, pas sur l'event loop Vert.x qui
+exécute la boucle `/sync`.

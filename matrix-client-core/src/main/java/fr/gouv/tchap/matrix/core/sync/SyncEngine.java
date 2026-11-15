@@ -28,6 +28,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
@@ -65,6 +66,13 @@ public class SyncEngine {
 	private final Set<String> processedEventIds;
 
 	private final AtomicBoolean running = new AtomicBoolean(false);
+	/**
+	 * Incrémentée à chaque start() et stop() : une requête lancée par une boucle
+	 * précédente (arrêtée, ou arrêtée puis redémarrée) ne doit plus rien modifier à
+	 * son retour — ni livrer d'événements, ni compter d'échec, ni relancer une
+	 * seconde boucle.
+	 */
+	private final AtomicLong generation = new AtomicLong();
 	private volatile ScheduledExecutorService executor;
 	private volatile String currentToken;
 
@@ -152,6 +160,7 @@ public class SyncEngine {
 			lastError = null;
 			consecutiveFailures.set(0);
 			startedAt = Instant.now();
+			generation.incrementAndGet();
 			executor = Executors.newSingleThreadScheduledExecutor(r -> {
 				Thread t = new Thread(r, "tchap-sync");
 				t.setDaemon(true);
@@ -164,6 +173,7 @@ public class SyncEngine {
 
 	public CompletionStage<Void> stop() {
 		running.set(false);
+		generation.incrementAndGet();
 		ScheduledExecutorService ex = executor;
 		if (ex != null)
 			ex.shutdownNow();
@@ -204,29 +214,48 @@ public class SyncEngine {
 		fatalErrorHandler.accept(cause);
 	}
 
+	/**
+	 * Vrai tant que la boucle de la génération {@code gen} est la boucle active.
+	 */
+	private boolean isCurrent(long gen) {
+		return running.get() && generation.get() == gen;
+	}
+
 	private void doSync() {
 		if (!running.get())
 			return;
-		api.sync(currentToken, syncTimeoutMs, initialLimit, roomFilter).thenAccept(this::handleResponse)
-				.exceptionally(ex -> {
-					Throwable cause = unwrap(ex);
-					consecutiveFailures.incrementAndGet();
-					lastError = describe(cause);
-					if (cause instanceof AuthenticationException) {
-						// Identifiants refusés : réessayer ne servirait à rien, et marteler le serveur
-						// (nouveau login toutes les 5 s) risque de verrouiller le compte
-						fail(cause);
-						return null;
-					}
-					long delay = retryDelayMs(cause);
-					if (cause instanceof RateLimitException) {
-						LOG.log(WARNING, "Rate limited by homeserver, retrying in " + delay + " ms");
-					} else {
-						LOG.log(WARNING, "Sync failed, retrying in " + delay + " ms", cause);
-					}
-					schedule(delay);
-					return null;
-				});
+		final long gen = generation.get();
+		api.sync(currentToken, syncTimeoutMs, initialLimit, roomFilter).thenAccept(response -> {
+			if (isCurrent(gen)) {
+				handleResponse(response);
+			} else {
+				LOG.log(DEBUG, "Sync response ignored: engine stopped");
+			}
+		}).exceptionally(ex -> {
+			Throwable cause = unwrap(ex);
+			if (!isCurrent(gen)) {
+				// Arrêt en cours : la requête de long polling est coupée avec le transport.
+				// Ce n'est pas un échec de synchronisation.
+				LOG.log(DEBUG, "Sync interrupted by shutdown: {0}", describe(cause));
+				return null;
+			}
+			consecutiveFailures.incrementAndGet();
+			lastError = describe(cause);
+			if (cause instanceof AuthenticationException) {
+				// Identifiants refusés : réessayer ne servirait à rien, et marteler le serveur
+				// (nouveau login toutes les 5 s) risque de verrouiller le compte
+				fail(cause);
+				return null;
+			}
+			long delay = retryDelayMs(cause);
+			if (cause instanceof RateLimitException) {
+				LOG.log(WARNING, "Rate limited by homeserver, retrying in " + delay + " ms");
+			} else {
+				LOG.log(WARNING, "Sync failed, retrying in " + delay + " ms", cause);
+			}
+			schedule(delay);
+			return null;
+		});
 	}
 
 	private void handleResponse(String response) {

@@ -56,4 +56,28 @@ class FileSyncTokenStoreTest {
 
 		assertEquals(Optional.empty(), new FileSyncTokenStore(file).load().toCompletableFuture().join());
 	}
+
+	@Test
+	void close_finishesThePendingWrites() throws Exception {
+		Path file = dir.resolve("token");
+		FileSyncTokenStore store = new FileSyncTokenStore(file);
+
+		store.save("s1"); // volontairement sans attendre
+		store.save("s2");
+		store.close();
+
+		assertEquals("s2", java.nio.file.Files.readString(file).trim());
+	}
+
+	@Test
+	void afterClose_saveFailsCleanly_andCloseIsIdempotent() {
+		FileSyncTokenStore store = new FileSyncTokenStore(dir.resolve("token"));
+		store.close();
+		store.close();
+
+		var failure = assertThrows(java.util.concurrent.CompletionException.class,
+				() -> store.save("late").toCompletableFuture().join());
+
+		assertInstanceOf(IllegalStateException.class, failure.getCause());
+	}
 }

@@ -75,6 +75,29 @@ public class TchapClientProducer {
 		transport.close();
 	}
 
+	/**
+	 * Ferme les magasins créés par l'extension (et eux seuls : un bean fourni par
+	 * l'application n'est pas concerné) : les écritures en attente sont terminées
+	 * avant l'arrêt, notamment le dernier refresh token.
+	 */
+	void disposeSyncTokenStore(@Disposes SyncTokenStore store) {
+		closeQuietly(store);
+	}
+
+	void disposeCredentialStore(@Disposes CredentialStore store) {
+		closeQuietly(store);
+	}
+
+	private static void closeQuietly(Object store) {
+		if (store instanceof AutoCloseable closeable) {
+			try {
+				closeable.close();
+			} catch (Exception e) {
+				LOG.warn("Error while closing " + store.getClass().getSimpleName(), e);
+			}
+		}
+	}
+
 	@Produces
 	@Singleton
 	@Startup
