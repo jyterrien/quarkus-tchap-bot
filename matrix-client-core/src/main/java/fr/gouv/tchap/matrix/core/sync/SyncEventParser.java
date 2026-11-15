@@ -67,6 +67,18 @@ public class SyncEventParser {
 		return target.isTextual() && !target.asText().isBlank() ? target.asText() : null;
 	}
 
+	/**
+	 * Message remplacé par une édition : {@code content.m.relates_to.event_id}
+	 * quand {@code rel_type} vaut {@code m.replace}. Null si absent.
+	 */
+	private static String replacesOf(JsonNode content) {
+		JsonNode relatesTo = content.path("m.relates_to");
+		if (!"m.replace".equals(relatesTo.path("rel_type").asText(null)))
+			return null;
+		JsonNode target = relatesTo.path("event_id");
+		return target.isTextual() && !target.asText().isBlank() ? target.asText() : null;
+	}
+
 	public List<MatrixEvent> parseEvents(String json) {
 		List<MatrixEvent> events = new ArrayList<>();
 		try {
@@ -89,7 +101,7 @@ public class SyncEventParser {
 					long ts = ev.path("origin_server_ts").asLong(0L);
 					JsonNode content = ev.path("content");
 					events.add(new MatrixEvent(eventId, roomId, sender, type, content.toString(),
-							Instant.ofEpochMilli(ts), threadRootOf(content), replyToOf(content)));
+							Instant.ofEpochMilli(ts), threadRootOf(content), replyToOf(content), replacesOf(content)));
 				}
 			});
 		} catch (Exception e) {

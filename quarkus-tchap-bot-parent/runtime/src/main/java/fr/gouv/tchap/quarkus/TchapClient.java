@@ -41,4 +41,21 @@ public class TchapClient {
 	public CompletionStage<MessageReceipt> send(String roomId, OutgoingMessage message) {
 		return matrixClient.messages().send(roomId, message);
 	}
+
+	/**
+	 * Modifie un message que le bot a envoyé (le nouveau contenu ne peut pas
+	 * changer sa réponse ni son thread). Voir
+	 * {@link fr.gouv.tchap.matrix.message.MessageService#edit}.
+	 */
+	public CompletionStage<MessageReceipt> edit(String roomId, String eventId, OutgoingMessage newContent) {
+		return matrixClient.messages().edit(roomId, eventId, newContent);
+	}
+
+	/**
+	 * Réagit à un message avec {@code key} (en général un emoji). Voir
+	 * {@link fr.gouv.tchap.matrix.message.MessageService#react}.
+	 */
+	public CompletionStage<MessageReceipt> react(String roomId, String eventId, String key) {
+		return matrixClient.messages().react(roomId, eventId, key);
+	}
 }

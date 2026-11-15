@@ -156,4 +156,128 @@ class TchapMessageMapperTest {
 		assertNull(m.replyToEventId());
 		assertFalse(m.isReply());
 	}
+
+	// ---- éditions
+	// ----------------------------------------------------------------------------
+
+	private static MatrixEvent editEvent(String sender, String content) {
+		return new MatrixEvent("$edit", "!room:s", sender, "m.room.message", content, TS, null, null, "$orig");
+	}
+
+	private static final String EDIT_CONTENT = "{\"msgtype\":\"m.text\",\"body\":\"* v2\","
+			+ "\"m.new_content\":{\"msgtype\":\"m.notice\",\"body\":\"v2\"},"
+			+ "\"m.relates_to\":{\"rel_type\":\"m.replace\",\"event_id\":\"$orig\"}}";
+
+	@Test
+	void anEdit_isNotPublishedAsANewMessage() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		assertTrue(mapper.map(editEvent("@alice:s", EDIT_CONTENT)).isEmpty());
+	}
+
+	@Test
+	void anEdit_isMappedToAnEditEvent_withTheNewContent() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		TchapMessageEdited edit = mapper.mapEdit(editEvent("@alice:s", EDIT_CONTENT)).orElseThrow();
+
+		assertEquals("$edit", edit.eventId());
+		assertEquals("$orig", edit.replacesEventId());
+		assertEquals("!room:s", edit.roomId());
+		assertEquals("@alice:s", edit.sender());
+		assertEquals("v2", edit.body(), "le nouveau texte, sans le préfixe « * »");
+		assertEquals("m.notice", edit.messageType());
+		assertEquals(TS, edit.timestamp());
+	}
+
+	@Test
+	void anEditWithoutNewContent_fallsBackToTheTopLevelBody() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+		MatrixEvent ev = editEvent("@alice:s", "{\"msgtype\":\"m.text\",\"body\":\"* v2\"}");
+
+		assertEquals("* v2", mapper.mapEdit(ev).orElseThrow().body());
+	}
+
+	@Test
+	void mapEdit_ignoresPlainMessages_andOtherTypes() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		assertTrue(mapper.mapEdit(event("m.room.message", "@alice:s", "{\"body\":\"salut\"}")).isEmpty());
+		assertTrue(mapper.mapEdit(event("m.room.member", "@alice:s", "{}")).isEmpty());
+	}
+
+	@Test
+	void anEditByTheBotItself_isIgnored_whenIgnoreSelfIsOn() {
+		assertTrue(new TchapMessageMapper(true, BOT).mapEdit(editEvent(BOT, EDIT_CONTENT)).isEmpty());
+		assertTrue(new TchapMessageMapper(false, BOT).mapEdit(editEvent(BOT, EDIT_CONTENT)).isPresent());
+	}
+
+	@Test
+	void anEditWithUnparsableContent_isDropped() {
+		assertTrue(new TchapMessageMapper(true, BOT).mapEdit(editEvent("@alice:s", "{pas du json")).isEmpty());
+	}
+
+	// ---- réactions
+	// ---------------------------------------------------------------------------
+
+	private static MatrixEvent reactionEvent(String sender, String content) {
+		return new MatrixEvent("$react", "!room:s", sender, "m.reaction", content, TS);
+	}
+
+	private static final String REACTION_CONTENT = "{\"m.relates_to\":{\"rel_type\":\"m.annotation\","
+			+ "\"event_id\":\"$orig\",\"key\":\"👍\"}}";
+
+	@Test
+	void aReaction_isMappedToAReactionEvent() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		TchapReaction reaction = mapper.mapReaction(reactionEvent("@alice:s", REACTION_CONTENT)).orElseThrow();
+
+		assertEquals("$react", reaction.eventId());
+		assertEquals("$orig", reaction.reactedEventId());
+		assertEquals("👍", reaction.key());
+		assertEquals("@alice:s", reaction.sender());
+		assertEquals("!room:s", reaction.roomId());
+		assertEquals(TS, reaction.timestamp());
+	}
+
+	@Test
+	void aReaction_isNeverPublishedAsAMessageOrAnEdit() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+		MatrixEvent ev = reactionEvent("@alice:s", REACTION_CONTENT);
+
+		assertTrue(mapper.map(ev).isEmpty());
+		assertTrue(mapper.mapEdit(ev).isEmpty());
+	}
+
+	@Test
+	void aReactionByTheBotItself_isIgnored_whenIgnoreSelfIsOn() {
+		assertTrue(new TchapMessageMapper(true, BOT).mapReaction(reactionEvent(BOT, REACTION_CONTENT)).isEmpty());
+		assertTrue(new TchapMessageMapper(false, BOT).mapReaction(reactionEvent(BOT, REACTION_CONTENT)).isPresent());
+	}
+
+	@Test
+	void malformedReactions_areIgnored() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		assertTrue(mapper.mapReaction(reactionEvent("@a:s", "{}")).isEmpty());
+		assertTrue(mapper
+				.mapReaction(
+						reactionEvent("@a:s", "{\"m.relates_to\":{\"rel_type\":\"m.annotation\",\"event_id\":\"$o\"}}"))
+				.isEmpty(), "sans clé");
+		assertTrue(mapper
+				.mapReaction(reactionEvent("@a:s", "{\"m.relates_to\":{\"rel_type\":\"m.annotation\",\"key\":\"👍\"}}"))
+				.isEmpty(), "sans cible");
+		assertTrue(
+				mapper.mapReaction(reactionEvent("@a:s",
+						"{\"m.relates_to\":{\"rel_type\":\"m.replace\",\"event_id\":\"$o\",\"key\":\"x\"}}")).isEmpty(),
+				"ce n'est pas une annotation");
+		assertTrue(mapper.mapReaction(reactionEvent("@a:s", "{pas du json")).isEmpty());
+	}
+
+	@Test
+	void mapReaction_ignoresMessages() {
+		assertTrue(new TchapMessageMapper(true, BOT)
+				.mapReaction(event("m.room.message", "@alice:s", "{\"body\":\"x\"}")).isEmpty());
+	}
 }

@@ -33,6 +33,9 @@ public class SimpleBot {
 		LOG.infof("!ping received in room %s, replying pong", message.roomId());
 		if ("!ping".equals(message.body())) {
 
+			// room.edit("$monMessage", OutgoingMessage.text("Texte corrigé")); // éditer
+			// room.react("$leurMessage", "👍"); // réagir
+
 			integration
 					.send(OutgoingMessage.notice("pong").withHtml("<i><font color=\"red\">P</font>ong</i>")
 							.inThread(message.replyThreadId()))

@@ -108,4 +108,26 @@ class DefaultMatrixRoomTest {
 		assertEquals("$q", new ObjectMapper().readTree(body.getValue()).path("m.relates_to").path("m.in_reply_to")
 				.path("event_id").asText());
 	}
+
+	@Test
+	void edit_goesToTheBoundRoom_withTheReplaceRelation() throws Exception {
+		putReturns("{\"event_id\":\"$edit\"}");
+
+		room.edit("$orig", fr.gouv.tchap.matrix.message.OutgoingMessage.text("v2")).toCompletableFuture().join();
+
+		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+		verify(transport).put(eq("/_matrix/client/v3/rooms/%21oncall%3As/send/m.room.message/txn1"), eq("tok"),
+				body.capture());
+		assertEquals("$orig",
+				new ObjectMapper().readTree(body.getValue()).path("m.relates_to").path("event_id").asText());
+	}
+
+	@Test
+	void react_goesToTheBoundRoom_asAReactionEvent() {
+		putReturns("{\"event_id\":\"$re\"}");
+
+		room.react("$orig", "👍").toCompletableFuture().join();
+
+		verify(transport).put(eq("/_matrix/client/v3/rooms/%21oncall%3As/send/m.reaction/txn1"), eq("tok"), any());
+	}
 }

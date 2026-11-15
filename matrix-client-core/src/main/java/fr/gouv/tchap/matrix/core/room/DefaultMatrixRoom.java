@@ -51,6 +51,16 @@ public final class DefaultMatrixRoom implements MatrixRoom {
 	}
 
 	@Override
+	public CompletionStage<MessageReceipt> edit(String eventId, OutgoingMessage newContent) {
+		return messages.edit(roomId, eventId, newContent);
+	}
+
+	@Override
+	public CompletionStage<MessageReceipt> react(String eventId, String key) {
+		return messages.react(roomId, eventId, key);
+	}
+
+	@Override
 	public String toString() {
 		return "MatrixRoom[" + roomId + "]";
 	}

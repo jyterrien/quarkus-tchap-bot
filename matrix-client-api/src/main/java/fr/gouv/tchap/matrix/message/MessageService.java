@@ -55,4 +55,34 @@ public interface MessageService {
 	 *             si {@code message} est nul
 	 */
 	CompletionStage<MessageReceipt> send(String roomId, OutgoingMessage message);
+
+	/**
+	 * Modifie un message déjà envoyé (relation {@code m.replace}). Seul l'auteur
+	 * d'un message peut le modifier : modifier le message d'un autre est accepté
+	 * par le serveur mais ignoré par les clients.
+	 * <p>
+	 * {@code newContent} donne le nouveau texte, le type et la version HTML ; ses
+	 * relations ne peuvent pas changer : une réponse ou un thread sont refusés
+	 * ({@link IllegalArgumentException}). Les clients qui ne gèrent pas les
+	 * éditions affichent le texte de repli « * nouveau texte ».
+	 *
+	 * @param eventId
+	 *            message à modifier (sa version d'origine, pas une édition)
+	 *
+	 * @return reçu de l'événement d'édition (pas celui du message d'origine)
+	 */
+	CompletionStage<MessageReceipt> edit(String roomId, String eventId, OutgoingMessage newContent);
+
+	/**
+	 * Réagit à un message (relation {@code m.annotation}) avec {@code key}, en
+	 * général un emoji (ex. {@code "👍"}).
+	 * <p>
+	 * Réagir deux fois avec la même clé au même message est refusé par le serveur
+	 * (réaction en double). Retirer une réaction demande de supprimer l'événement
+	 * de réaction, ce que ce service ne fait pas encore.
+	 *
+	 * @throws IllegalArgumentException
+	 *             si {@code eventId} ou {@code key} est nul ou vide
+	 */
+	CompletionStage<MessageReceipt> react(String roomId, String eventId, String key);
 }

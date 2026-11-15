@@ -52,18 +52,74 @@ public class DefaultMessageService implements MessageService {
 				.thenApply(response -> new MessageReceipt(extractEventId(response)));
 	}
 
+	@Override
+	public CompletionStage<MessageReceipt> edit(String roomId, String eventId, OutgoingMessage newContent) {
+		requireText(eventId, "eventId");
+		Objects.requireNonNull(newContent, "newContent is required");
+		if (newContent.replyToEventId() != null || newContent.threadRootId() != null) {
+			throw new IllegalArgumentException("An edit cannot change the reply or thread relation of a message");
+		}
+		String txnId = txnGenerator.next();
+		return api.sendMessage(roomId, txnId, toEditContent(eventId, newContent).toString())
+				.thenApply(response -> new MessageReceipt(extractEventId(response)));
+	}
+
+	@Override
+	public CompletionStage<MessageReceipt> react(String roomId, String eventId, String key) {
+		requireText(eventId, "eventId");
+		requireText(key, "key");
+		String txnId = txnGenerator.next();
+		ObjectNode content = MAPPER.createObjectNode();
+		ObjectNode relatesTo = content.putObject("m.relates_to");
+		relatesTo.put("rel_type", "m.annotation");
+		relatesTo.put("event_id", eventId);
+		relatesTo.put("key", key);
+		return api.sendEvent(roomId, "m.reaction", txnId, content.toString())
+				.thenApply(response -> new MessageReceipt(extractEventId(response)));
+	}
+
 	/**
 	 * Contenu {@code m.room.message}. Ordre des champs : msgtype, body, format et
 	 * formatted_body, puis m.relates_to.
 	 */
 	static ObjectNode toContent(OutgoingMessage message) {
+		ObjectNode content = baseContent(message);
+		addRelation(content, message);
+		return content;
+	}
+
+	/** msgtype, body, et format + formatted_body s'il y a une version HTML. */
+	private static ObjectNode baseContent(OutgoingMessage message) {
 		ObjectNode content = MAPPER.createObjectNode().put("msgtype", message.type().msgtype()).put("body",
 				message.body());
 		if (message.formattedBody() != null) {
 			content.put("format", "org.matrix.custom.html").put("formatted_body", message.formattedBody());
 		}
-		addRelation(content, message);
 		return content;
+	}
+
+	/**
+	 * Édition : le nouveau contenu est dans {@code m.new_content} ; le contenu de
+	 * premier niveau est un repli (« * texte ») pour les clients qui ne gèrent pas
+	 * les éditions.
+	 */
+	static ObjectNode toEditContent(String replacedEventId, OutgoingMessage newContent) {
+		ObjectNode content = MAPPER.createObjectNode().put("msgtype", newContent.type().msgtype()).put("body",
+				"* " + newContent.body());
+		if (newContent.formattedBody() != null) {
+			content.put("format", "org.matrix.custom.html").put("formatted_body", "* " + newContent.formattedBody());
+		}
+		content.set("m.new_content", baseContent(newContent));
+		ObjectNode relatesTo = content.putObject("m.relates_to");
+		relatesTo.put("rel_type", "m.replace");
+		relatesTo.put("event_id", replacedEventId);
+		return content;
+	}
+
+	private static void requireText(String value, String name) {
+		if (value == null || value.isBlank()) {
+			throw new IllegalArgumentException(name + " is required");
+		}
 	}
 
 	/**

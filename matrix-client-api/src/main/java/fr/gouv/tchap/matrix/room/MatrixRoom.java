@@ -41,4 +41,16 @@ public interface MatrixRoom {
 	 * {@link fr.gouv.tchap.matrix.message.MessageService#send}.
 	 */
 	CompletionStage<MessageReceipt> send(fr.gouv.tchap.matrix.message.OutgoingMessage message);
+
+	/**
+	 * Modifie un message que le bot a envoyé dans ce salon ; voir
+	 * {@link fr.gouv.tchap.matrix.message.MessageService#edit}.
+	 */
+	CompletionStage<MessageReceipt> edit(String eventId, fr.gouv.tchap.matrix.message.OutgoingMessage newContent);
+
+	/**
+	 * Réagit à un message de ce salon ; voir
+	 * {@link fr.gouv.tchap.matrix.message.MessageService#react}.
+	 */
+	CompletionStage<MessageReceipt> react(String eventId, String key);
 }

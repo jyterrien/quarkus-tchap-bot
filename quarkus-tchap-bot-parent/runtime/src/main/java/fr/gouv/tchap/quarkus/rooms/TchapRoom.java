@@ -86,6 +86,25 @@ public final class TchapRoom {
 		return r == null ? unavailable() : r.send(message);
 	}
 
+	/**
+	 * Modifie un message que le bot a envoyé dans ce salon (le nouveau contenu ne
+	 * peut pas changer sa réponse ni son thread). Voir
+	 * {@link fr.gouv.tchap.matrix.message.MessageService#edit}.
+	 */
+	public CompletionStage<MessageReceipt> edit(String eventId, OutgoingMessage newContent) {
+		MatrixRoom r = room;
+		return r == null ? unavailable() : r.edit(eventId, newContent);
+	}
+
+	/**
+	 * Réagit à un message de ce salon avec {@code key} (en général un emoji). Voir
+	 * {@link fr.gouv.tchap.matrix.message.MessageService#react}.
+	 */
+	public CompletionStage<MessageReceipt> react(String eventId, String key) {
+		MatrixRoom r = room;
+		return r == null ? unavailable() : r.react(eventId, key);
+	}
+
 	void bind(MatrixRoom matrixRoom) {
 		this.room = matrixRoom;
 	}

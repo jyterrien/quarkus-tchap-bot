@@ -119,7 +119,15 @@ public class MatrixHttpApi {
 
 	/** PUT /rooms/{roomId}/send/m.room.message/{txnId} */
 	public CompletionStage<String> sendMessage(String roomId, String txnId, String jsonBody) {
-		String path = API_PREFIX + "/rooms/" + encode(roomId) + "/send/m.room.message/" + encode(txnId);
+		return sendEvent(roomId, "m.room.message", txnId, jsonBody);
+	}
+
+	/**
+	 * Envoie un événement de type quelconque ({@code m.room.message},
+	 * {@code m.reaction}...) : {@code PUT /rooms/{roomId}/send/{type}/{txnId}}.
+	 */
+	public CompletionStage<String> sendEvent(String roomId, String eventType, String txnId, String jsonBody) {
+		String path = API_PREFIX + "/rooms/" + encode(roomId) + "/send/" + encode(eventType) + "/" + encode(txnId);
 		return authed(token -> transport.put(path, token, jsonBody));
 	}
 

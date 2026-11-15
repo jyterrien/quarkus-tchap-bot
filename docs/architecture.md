@@ -108,3 +108,35 @@ void onMessage(@Observes @TchapRoomName("oncall") TchapMessage message) {
 
 Les méthodes précédentes (`sendText`, `sendNotice`, `sendTextInThread`, `sendNoticeInThread`) restent et produisent
 le même contenu qu'avant. Un texte vide est refusé (`IllegalArgumentException`).
+
+### Éditions et réactions
+
+```java
+room.edit("$monMessage", OutgoingMessage.text("Texte corrigé"));   // m.replace
+room.react("$leurMessage", "👍");                                    // m.annotation
+```
+
+- **Éditer** (`edit(eventId, nouveauContenu)`) : le nouveau contenu est dans `m.new_content`, le contenu de premier
+  niveau est un repli « * texte » pour les clients sans gestion des éditions. Le nouveau contenu ne peut pas changer
+  la réponse ni le thread du message (`IllegalArgumentException`). Seul l'auteur peut éditer son message ; le reçu
+  renvoyé est celui de l'événement d'édition, pas du message d'origine.
+- **Réagir** (`react(eventId, clé)`) : la clé est en général un emoji. Réagir deux fois avec la même clé au même
+  message est refusé par le serveur. Retirer une réaction demande de supprimer l'événement de réaction
+  (`/redact`), pas encore pris en charge.
+- **Recevoir une édition** : elle n'est **plus** publiée comme un nouveau `TchapMessage` (elle arrivait comme un
+  message « * texte » et re-déclenchait le bot). Elle arrive comme un événement CDI `TchapMessageEdited` (message
+  remplacé, nouveau texte, nouveau `msgtype`) :
+
+```java
+void onEdit(@Observes TchapMessageEdited edit) {
+    // edit.replacesEventId() désigne le message d'origine, edit.body() le nouveau texte
+}
+```
+
+- **Recevoir une réaction** : événement CDI `TchapReaction` (message visé, clé).
+- Les deux sont publiés comme les messages : avec le qualificatif `@TchapRoomName` du salon pour un salon nommé, et
+  ils respectent `ignore-self-messages`. Au niveau du SDK, `MatrixEvent.replacesEventId()` / `isEdit()` donnent la
+  cible d'une édition ; les réactions sont des événements de type `m.reaction` dont la relation est lue par
+  l'extension.
+- `MessageService.sendEvent` n'existe pas encore, mais `MatrixHttpApi.sendEvent(roomId, type, txnId, json)` envoie
+  un événement de type quelconque (utilisé pour `m.reaction`).

@@ -246,6 +246,38 @@ final class FakeHomeserver implements AutoCloseable {
 	}
 
 	/**
+	 * Édition ({@code m.replace}) du message {@code replacesEventId}, nouveau texte
+	 * {@code newBody}.
+	 */
+	static String editEvent(String eventId, String replacesEventId, String newBody) {
+		return "{\"event_id\":\"" + eventId + "\",\"sender\":\"@alice:s\",\"type\":\"m.room.message\","
+				+ "\"origin_server_ts\":1,\"content\":{\"msgtype\":\"m.text\",\"body\":\"* " + newBody
+				+ "\",\"m.new_content\":{\"msgtype\":\"m.text\",\"body\":\"" + newBody + "\"},"
+				+ "\"m.relates_to\":{\"rel_type\":\"m.replace\",\"event_id\":\"" + replacesEventId + "\"}}}";
+	}
+
+	/**
+	 * Réaction ({@code m.annotation}) {@code key} au message
+	 * {@code reactedEventId}.
+	 */
+	static String reactionEvent(String eventId, String reactedEventId, String key) {
+		return "{\"event_id\":\"" + eventId + "\",\"sender\":\"@alice:s\",\"type\":\"m.reaction\","
+				+ "\"origin_server_ts\":1,\"content\":{\"m.relates_to\":{\"rel_type\":\"m.annotation\","
+				+ "\"event_id\":\"" + reactedEventId + "\",\"key\":\"" + key + "\"}}}";
+	}
+
+	/** Réponse /sync dont un salon contient les événements bruts donnés (JSON). */
+	static String syncWithRawEvents(String roomId, String... eventsJson) {
+		return syncResponse("\"" + roomId + "\":{\"timeline\":{\"events\":[" + String.join(",", eventsJson) + "]}}");
+	}
+
+	private static String syncResponse(String joinedRooms) {
+		return "{\"next_batch\":\"s1\"," + "\"account_data\":{\"events\":[]}," + "\"presence\":{\"events\":[]},"
+				+ "\"to_device\":{\"events\":[]}," + "\"device_lists\":{\"changed\":[],\"left\":[]},"
+				+ "\"device_one_time_keys_count\":{}," + "\"rooms\":{\"join\":{" + joinedRooms + "}}}";
+	}
+
+	/**
 	 * Réponse /sync dont chaque salon contient un message :
 	 * {@code {roomId, eventId, body}}, avec en 4e élément facultatif la racine d'un
 	 * thread et en 5e l'événement auquel le message répond.
@@ -260,9 +292,7 @@ final class FakeHomeserver implements AutoCloseable {
 					.append(messageEvent(e[1], e[2], e.length > 3 ? e[3] : null, e.length > 4 ? e[4] : null))
 					.append("]}}");
 		}
-		return "{\"next_batch\":\"s1\"," + "\"account_data\":{\"events\":[]}," + "\"presence\":{\"events\":[]},"
-				+ "\"to_device\":{\"events\":[]}," + "\"device_lists\":{\"changed\":[],\"left\":[]},"
-				+ "\"device_one_time_keys_count\":{}," + "\"rooms\":{\"join\":{" + joined + "}}}";
+		return syncResponse(joined.toString());
 	}
 
 	static void await(BooleanSupplier condition) throws InterruptedException {

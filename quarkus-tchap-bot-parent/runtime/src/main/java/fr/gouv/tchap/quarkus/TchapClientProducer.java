@@ -142,7 +142,11 @@ public class TchapClientProducer {
 		}
 
 		TchapMessageMapper mapper = new TchapMessageMapper(ignoreSelf, selfId);
-		Consumer<MatrixEvent> consumer = ev -> mapper.map(ev).ifPresent(publisher::publish);
+		Consumer<MatrixEvent> consumer = ev -> {
+			mapper.map(ev).ifPresent(publisher::publish);
+			mapper.mapEdit(ev).ifPresent(publisher::publish);
+			mapper.mapReaction(ev).ifPresent(publisher::publish);
+		};
 
 		MatrixClientOptions options = new MatrixClientOptions(config.sync().initialLimit(), config.sync().timeout(),
 				config.bot().autoJoinInvitedRooms());
