@@ -63,9 +63,9 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 | # | Manque | Statut | Détail |
 |---|--------|--------|--------|
 | 1 | **Login / logout / refresh** | ⚠️ | ✅ `/login` (mot de passe) et `/refresh` ; renouvellement à l'avance et sur 401 ; repli sur nouveau login ; identifiants persistés (`CredentialStore`). ❌ **`/logout` absent** : le bot ne ferme pas sa session à l'arrêt, des sessions s'accumulent sur le compte (voir 29). |
-| 2 | **Messages enrichis** : `m.emote`, `m.image`, `m.file`, `m.audio`, `m.video`, `m.location` + upload média | ❌ | `MessageService` ne sait faire que `m.text`/`m.notice`. Le transport ne permet pas l'upload binaire. |
-| 3 | **Réponses / threads / relations** : `m.in_reply_to`, `m.thread`, `m.replace`, `m.reaction` | ⚠️ | ✅ `m.thread` en émission (`sendTextInThread`, `sendNoticeInThread`) et réception (`threadRootId`), jusqu'à l'extension Quarkus. ❌ Répondre à un `event_id` précis (`m.in_reply_to`), édition (`m.replace`), réaction (`m.reaction`). |
-| 4 | **Formatage** : `format: org.matrix.custom.html`, `formatted_body` | ❌ | Notifications, alertes, markdown/HTML. |
+| 2 | **Messages enrichis** : `m.emote`, `m.image`, `m.file`, `m.audio`, `m.video`, `m.location` + upload média | ⚠️ | ✅ `m.emote` (`OutgoingMessage.emote`). ❌ Images, fichiers, audio, vidéo, position : l'upload média manque, et le transport ne permet pas l'upload binaire. |
+| 3 | **Réponses / threads / relations** : `m.in_reply_to`, `m.thread`, `m.replace`, `m.reaction` | ⚠️ | ✅ `m.thread` et `m.in_reply_to` en émission (`OutgoingMessage.inReplyTo` / `inThread`, `TchapMessage.reply`) et en réception (`threadRootId`, `replyToEventId`), jusqu'à l'extension Quarkus ; réponse ciblée dans un thread. ❌ Édition (`m.replace`) et réaction (`m.reaction`), en émission comme en réception : une édition reçue arrive comme un nouveau message (`* texte`) et peut re-déclencher le bot. |
+| 4 | **Formatage** : `format: org.matrix.custom.html`, `formatted_body` | ✅ | `OutgoingMessage.withHtml` + `escapeHtml`. Pas de conversion markdown → HTML ni de filtrage des balises : à la charge de l'appelant. |
 | 5bis | **Erreurs Matrix typées** | ✅ | `MatrixServerException(statut, errcode, soft_logout)` ; `SyncEngine` arrête la boucle sur identifiants refusés ; client en `FAILED` (sondes DOWN). |
 | 5ter | **Cohérence de la hiérarchie d'exceptions** | ❌ | `MatrixException` racine ; `MatrixTransportException` et `RateLimitException` à y rattacher (`RateLimitException extends MatrixServerException`). **Attention : voir « Points de vigilance » (429 et `isClientError`).** |
 | 5quater | **`HttpTransport.delete(...)`** + `send(method, path, headers, body)` | ❌ | Leave/kick/redact/forget/media. |
@@ -118,11 +118,12 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 - ✅ Erreurs serveur typées, arrêt de la sync sur identifiants refusés, état `FAILED` (#5bis, #6)
 - ✅ En-tête `Authorization` optionnel (#17ter)
 - ✅ Threads en émission et en réception, côté SDK et côté extension (#3 partiel, #26 partiel)
+- ✅ Messages enrichis : réponse à un message précis (`m.in_reply_to`), HTML (`formatted_body`), `m.emote`, réponse dans un thread ; `OutgoingMessage` et `send(...)` (#3, #4, #2 partiel)
 - ✅ Sondes de santé readiness / liveness, `SyncHealth` (#24 partiel)
 
 ### Sprint 1 (bot utilisable)
 
-1. **Messages riches** : `m.in_reply_to` (répondre au bon message), `formatted_body` HTML, `m.emote` ; helpers `sendReply`, `sendHtml` ; `MessageService.sendEvent(roomId, type, content)` (#3, #4, #12).
+1. ~~**Messages riches** : `m.in_reply_to`, HTML, `m.emote`~~ — ✅ fait via `OutgoingMessage` et `send(...)` (#3, #4). Reste : édition et réaction (`m.replace`, `m.reaction`), et `MessageService.sendEvent(roomId, type, content)` pour les événements arbitraires (#12).
 2. **Logout à l'arrêt** (#1, #29).
 3. **Refonte des exceptions** : `MatrixTransportException` et `RateLimitException` sous `MatrixException`/`MatrixServerException` (#5ter) — **en préservant la distinction 429 / refus définitif** (voir vigilance).
 4. **`HttpTransport.delete()`** + `send(method, path, headers, body)` générique ; `setIdleTimeout` (#5quater, #17bis, #17quater).
@@ -166,7 +167,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 
 ## Tickets à ouvrir tout de suite
 
-1. `MessageService` : `sendReply` (`m.in_reply_to`), `sendHtml` (`formatted_body`), `m.emote`.
+1. ~~`MessageService` : réponses, HTML, `m.emote`~~ — fait. Reste : ignorer ou signaler les éditions reçues (`m.replace`), réactions.
 2. `AuthService.logout()` + appel à l'arrêt de l'extension en mode `password`.
 3. Aligner la hiérarchie d'exceptions sur le contrat `HttpTransport` (`RateLimitException`, `MatrixTransportException`) **et** exclure le 429 de `MatrixServerException.isClientError()`.
 4. `HttpTransport#delete(String, String)` + `send(method, path, headers, body)`.

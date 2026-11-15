@@ -53,7 +53,7 @@ public class TchapMessageMapper {
 			String body = content.path("body").asText("");
 			String msgtype = content.path("msgtype").asText("m.text");
 			return Optional.of(new TchapMessage(ev.eventId(), ev.roomId(), ev.sender(), body, ev.timestamp(), false,
-					msgtype, ev.threadRootId()));
+					msgtype, ev.threadRootId(), ev.replyToEventId()));
 		} catch (Exception e) {
 			LOG.warnf("Cannot parse m.room.message content for event %s: %s", ev.eventId(), e.getMessage());
 			return Optional.empty();

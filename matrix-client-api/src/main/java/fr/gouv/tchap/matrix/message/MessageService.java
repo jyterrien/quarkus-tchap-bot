@@ -40,4 +40,19 @@ public interface MessageService {
 
 	/** Comme {@link #sendTextInThread}, avec le msgtype {@code m.notice}. */
 	CompletionStage<MessageReceipt> sendNoticeInThread(String roomId, String threadRootId, String body);
+
+	/**
+	 * Envoie un message complet : type ({@code m.text}, {@code m.notice},
+	 * {@code m.emote}), version HTML, réponse à un message précis, thread. C'est le
+	 * point d'entrée à utiliser dès qu'on dépasse le texte simple ; voir
+	 * {@link OutgoingMessage}.
+	 * <p>
+	 * Les réponses n'embarquent pas de « citation de repli » dans le texte (retirée
+	 * de la spécification Matrix 1.13) : les clients affichent la citation à partir
+	 * de la relation {@code m.in_reply_to}.
+	 *
+	 * @throws NullPointerException
+	 *             si {@code message} est nul
+	 */
+	CompletionStage<MessageReceipt> send(String roomId, OutgoingMessage message);
 }

@@ -1,5 +1,6 @@
 package fr.gouv.tchap.examples.simple;
 
+import fr.gouv.tchap.matrix.message.OutgoingMessage;
 import fr.gouv.tchap.quarkus.events.TchapMessage;
 import fr.gouv.tchap.quarkus.rooms.TchapRoom;
 import fr.gouv.tchap.quarkus.rooms.TchapRoomName;
@@ -31,7 +32,11 @@ public class SimpleBot {
 		// Ne réagit qu'aux messages de CE salon, jamais d'un autre.
 		LOG.infof("!ping received in room %s, replying pong", message.roomId());
 		if ("!ping".equals(message.body())) {
-			integration.sendTextInThread(message.replyThreadId(), "pong")
+
+			integration
+					.send(OutgoingMessage.notice("pong").withHtml("<i><font color=\"red\">P</font>ong</i>")
+							.inThread(message.replyThreadId()))
+					// integration.sendTextInThread(message.replyThreadId(), "pong")
 					// integration.sendText("pong")
 					.whenComplete((receipt, ex) -> {
 						if (ex != null) {

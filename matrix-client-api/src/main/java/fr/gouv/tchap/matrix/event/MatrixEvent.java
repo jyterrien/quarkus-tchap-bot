@@ -12,19 +12,39 @@ import java.time.Instant;
  *            {@code m.thread}), ou {@code null} s'il ne fait pas partie d'un
  *            thread. Pour répondre dans le même thread, le passer à
  *            {@code sendTextInThread}.
+ * @param replyToEventId
+ *            identifiant de l'événement auquel celui-ci répond précisément
+ *            ({@code m.in_reply_to}), ou {@code null}. Une réponse de repli
+ *            ajoutée par un client dans un thread ({@code is_falling_back})
+ *            n'est pas une vraie réponse : elle donne {@code null}.
  */
 public record MatrixEvent(String eventId, String roomId, String sender, String type, // ex: "m.room.message"
 		String content, // JSON brut du contenu
 		Instant timestamp, // origin_server_ts converti
-		String threadRootId // racine du thread, null hors thread
+		String threadRootId, // racine du thread, null hors thread
+		String replyToEventId // événement visé par la réponse, null si ce n'en est pas une
 ) {
 
 	/**
-	 * Événement hors thread (conserve la signature antérieure à la prise en charge
-	 * des threads).
+	 * Événement hors thread et sans réponse (conserve la signature antérieure à la
+	 * prise en charge des threads).
 	 */
 	public MatrixEvent(String eventId, String roomId, String sender, String type, String content, Instant timestamp) {
-		this(eventId, roomId, sender, type, content, timestamp, null);
+		this(eventId, roomId, sender, type, content, timestamp, null, null);
+	}
+
+	/**
+	 * Événement sans réponse (signature antérieure à la prise en charge des
+	 * réponses).
+	 */
+	public MatrixEvent(String eventId, String roomId, String sender, String type, String content, Instant timestamp,
+			String threadRootId) {
+		this(eventId, roomId, sender, type, content, timestamp, threadRootId, null);
+	}
+
+	/** Vrai si l'événement répond précisément à un autre message. */
+	public boolean isReply() {
+		return replyToEventId != null;
 	}
 
 	/** Vrai si l'événement est une réponse dans un thread. */

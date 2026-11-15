@@ -20,6 +20,7 @@ class FileCredentialStoreTest {
 	private static final Credentials SAMPLE = new Credentials("@bot.fr:srv", "@bot:srv", "DEV1", "at1", "rt1",
 			Instant.parse("2026-11-11T16:00:00Z"));
 
+	@SuppressWarnings("resource")
 	@Test
 	void missingFile_loadsEmpty() {
 		assertTrue(new FileCredentialStore(dir.resolve("none.json")).load().toCompletableFuture().join().isEmpty());
@@ -27,6 +28,7 @@ class FileCredentialStoreTest {
 
 	@Test
 	void saveThenLoad_roundTripsEveryField() {
+		@SuppressWarnings("resource")
 		FileCredentialStore store = new FileCredentialStore(dir.resolve("sub/credentials.json"));
 
 		store.save(SAMPLE).toCompletableFuture().join();
@@ -36,6 +38,7 @@ class FileCredentialStoreTest {
 
 	@Test
 	void optionalFields_mayBeAbsent() {
+		@SuppressWarnings("resource")
 		FileCredentialStore store = new FileCredentialStore(dir.resolve("c.json"));
 		Credentials minimal = new Credentials("@bot.fr:srv", null, null, "only-access", null, null);
 
@@ -51,6 +54,7 @@ class FileCredentialStoreTest {
 	@Test
 	void secondSave_replacesTheFirst_andLeavesNoTemporaryFile() throws Exception {
 		Path file = dir.resolve("c.json");
+		@SuppressWarnings("resource")
 		FileCredentialStore store = new FileCredentialStore(file);
 		store.save(SAMPLE).toCompletableFuture().join();
 
@@ -62,6 +66,7 @@ class FileCredentialStoreTest {
 		}
 	}
 
+	@SuppressWarnings("resource")
 	@Test
 	void file_isReadableByItsOwnerOnly_onPosixSystems() throws Exception {
 		Path file = dir.resolve("c.json");
@@ -73,6 +78,7 @@ class FileCredentialStoreTest {
 		}
 	}
 
+	@SuppressWarnings("resource")
 	@Test
 	void blankOrCorruptFile_isHandled() throws Exception {
 		Path blank = dir.resolve("blank.json");
@@ -94,6 +100,7 @@ class FileCredentialStoreTest {
 		store.save(new Credentials("@bot.fr:srv", "@bot:srv", "DEV1", "at2", "rt2", null));
 		store.close();
 
+		@SuppressWarnings("resource")
 		Credentials loaded = new FileCredentialStore(file).load().toCompletableFuture().join().orElseThrow();
 		assertEquals("rt2", loaded.refreshToken());
 	}

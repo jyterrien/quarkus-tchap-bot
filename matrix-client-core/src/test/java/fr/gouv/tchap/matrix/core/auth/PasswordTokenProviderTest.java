@@ -144,6 +144,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void firstCall_logsIn_requestingARefreshToken_andReusesTheTokenAfterwards() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
 
@@ -163,6 +164,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void login_exposesTheServerUserId_whichMayDifferFromTheLoginIdentifier() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
 
@@ -175,6 +177,7 @@ class PasswordTokenProviderTest {
 	@Test
 	void concurrentFirstCalls_shareASingleLogin() {
 		CompletableFuture<String> pending = new CompletableFuture<>();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, pending);
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
 
@@ -192,6 +195,7 @@ class PasswordTokenProviderTest {
 	@Test
 	void nearExpiry_theTokenIsRefreshedInAdvance_andTheRefreshTokenRotates() {
 		TestClock clock = new TestClock();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 3_600_000))
 				.on(REFRESH_PATH, refreshResponse("at2", "rt2", 3_600_000), refreshResponse("at3", "rt3", 3_600_000));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), clock);
@@ -216,6 +220,7 @@ class PasswordTokenProviderTest {
 	@Test
 	void refreshResponseWithoutNewRefreshToken_keepsTheOldOne() {
 		TestClock clock = new TestClock();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 3_600_000))
 				.on(REFRESH_PATH, refreshResponse("at2", null, 3_600_000));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), clock);
@@ -231,6 +236,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void renewAfterRejection_usesTheRefreshToken() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000))
 				.on(REFRESH_PATH, refreshResponse("at2", "rt2", 21_600_000));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
@@ -245,6 +251,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void renewOfATokenThatIsNoLongerCurrent_returnsTheCurrentWithoutAnyRequest() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000))
 				.on(REFRESH_PATH, refreshResponse("at2", "rt2", 21_600_000));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
@@ -260,6 +267,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void refreshRefusedByTheServer_fallsBackToLogin_withTheSameDevice() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport()
 				.on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000), loginResponse("at9", "rt9", 21_600_000))
 				.on(REFRESH_PATH, serverError(401, "M_UNKNOWN_TOKEN"));
@@ -276,6 +284,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void refreshFailingTransiently_doesNotLogInAgain_andLeavesTheCredentialsUsable() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000)).on(
 				REFRESH_PATH, new MatrixException("Vert.x transport error: connection refused"),
 				refreshResponse("at2", "rt2", 21_600_000));
@@ -293,6 +302,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void serverErrorOnRefresh_isTransient() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000))
 				.on(REFRESH_PATH, serverError(503, "M_UNKNOWN"));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
@@ -304,6 +314,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void noRefreshTokenIssued_renewalLogsInAgain() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", null, 0),
 				loginResponse("at2", null, 0));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
@@ -317,6 +328,7 @@ class PasswordTokenProviderTest {
 	@Test
 	void tokenWithoutExpiry_isNeverRefreshedInAdvance() {
 		TestClock clock = new TestClock();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", null, 0));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), clock);
 		provider.accessToken().toCompletableFuture().join();
@@ -329,6 +341,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void loginRefused_failsWithAuthenticationException_withoutLeakingThePassword() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, serverError(403, "M_FORBIDDEN"));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
 
@@ -341,6 +354,7 @@ class PasswordTokenProviderTest {
 
 	@Test
 	void loginFailingTransiently_isNotAnAuthenticationException() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH,
 				new MatrixException("Vert.x transport error: timeout"), loginResponse("at1", "rt1", 21_600_000));
 		PasswordTokenProvider provider = provider(transport, new InMemoryCredentialStore(), new TestClock());
@@ -356,6 +370,7 @@ class PasswordTokenProviderTest {
 	@Test
 	void credentialsAreStoredAfterLoginAndAfterEachRefresh() {
 		InMemoryCredentialStore store = new InMemoryCredentialStore();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000))
 				.on(REFRESH_PATH, refreshResponse("at2", "rt2", 21_600_000));
 		PasswordTokenProvider provider = provider(transport, store, new TestClock());
@@ -394,6 +409,7 @@ class PasswordTokenProviderTest {
 		InMemoryCredentialStore store = new InMemoryCredentialStore();
 		store.save(new Credentials(LOGIN_ID, "@bot-user:srv", "DEV1", "old-at", "stored-rt",
 				clock.instant().minus(Duration.ofHours(1)))).toCompletableFuture().join();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(REFRESH_PATH, refreshResponse("at2", "rt2", 21_600_000));
 		PasswordTokenProvider provider = provider(transport, store, clock);
 
@@ -407,6 +423,7 @@ class PasswordTokenProviderTest {
 		InMemoryCredentialStore store = new InMemoryCredentialStore();
 		store.save(new Credentials("@someone-else:srv", "@someone-else:srv", "DEV9", "other-at", "other-rt", null))
 				.toCompletableFuture().join();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000));
 		PasswordTokenProvider provider = provider(transport, store, new TestClock());
 
@@ -422,6 +439,7 @@ class PasswordTokenProviderTest {
 				return CompletableFuture.failedFuture(new IllegalStateException("disk error"));
 			}
 		};
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000));
 
 		assertEquals("at1", provider(transport, store, new TestClock()).accessToken().toCompletableFuture().join());
@@ -435,6 +453,7 @@ class PasswordTokenProviderTest {
 				return CompletableFuture.failedFuture(new IllegalStateException("disk full"));
 			}
 		};
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1", 21_600_000));
 
 		assertEquals("at1", provider(transport, store, new TestClock()).accessToken().toCompletableFuture().join());

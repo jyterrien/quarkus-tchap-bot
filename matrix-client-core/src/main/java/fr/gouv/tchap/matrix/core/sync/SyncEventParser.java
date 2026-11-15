@@ -52,6 +52,21 @@ public class SyncEventParser {
 		return root.isTextual() && !root.asText().isBlank() ? root.asText() : null;
 	}
 
+	/**
+	 * Événement visé par une réponse :
+	 * {@code content.m.relates_to.m.in_reply_to.event_id}. Dans un thread, la
+	 * relation de réponse sert aussi de repli aux clients sans threads
+	 * ({@code is_falling_back: true}) : ce n'est alors pas une vraie réponse. Null
+	 * si absent.
+	 */
+	private static String replyToOf(JsonNode content) {
+		JsonNode relatesTo = content.path("m.relates_to");
+		if (relatesTo.path("is_falling_back").asBoolean(false))
+			return null;
+		JsonNode target = relatesTo.path("m.in_reply_to").path("event_id");
+		return target.isTextual() && !target.asText().isBlank() ? target.asText() : null;
+	}
+
 	public List<MatrixEvent> parseEvents(String json) {
 		List<MatrixEvent> events = new ArrayList<>();
 		try {
@@ -74,7 +89,7 @@ public class SyncEventParser {
 					long ts = ev.path("origin_server_ts").asLong(0L);
 					JsonNode content = ev.path("content");
 					events.add(new MatrixEvent(eventId, roomId, sender, type, content.toString(),
-							Instant.ofEpochMilli(ts), threadRootOf(content)));
+							Instant.ofEpochMilli(ts), threadRootOf(content), replyToOf(content)));
 				}
 			});
 		} catch (Exception e) {

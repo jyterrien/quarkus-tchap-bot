@@ -15,11 +15,13 @@ class FileSyncTokenStoreTest {
 
 	@Test
 	void load_missingFile_returnsEmpty() {
+		@SuppressWarnings("resource")
 		FileSyncTokenStore store = new FileSyncTokenStore(dir.resolve("token"));
 
 		assertEquals(Optional.empty(), store.load().toCompletableFuture().join());
 	}
 
+	@SuppressWarnings("resource")
 	@Test
 	void saveThenLoad_fromANewInstance_returnsTheToken() {
 		Path file = dir.resolve("token");
@@ -32,6 +34,7 @@ class FileSyncTokenStoreTest {
 
 	@Test
 	void save_overwritesPreviousToken() {
+		@SuppressWarnings("resource")
 		FileSyncTokenStore store = new FileSyncTokenStore(dir.resolve("token"));
 		store.save("first").toCompletableFuture().join();
 		store.save("second").toCompletableFuture().join();
@@ -39,6 +42,7 @@ class FileSyncTokenStoreTest {
 		assertEquals(Optional.of("second"), store.load().toCompletableFuture().join());
 	}
 
+	@SuppressWarnings("resource")
 	@Test
 	void save_createsMissingParentDirectories_andLeavesNoTempFile() {
 		Path file = dir.resolve("a/b/token");
@@ -49,6 +53,7 @@ class FileSyncTokenStoreTest {
 		assertFalse(Files.exists(dir.resolve("a/b/token.tmp")));
 	}
 
+	@SuppressWarnings("resource")
 	@Test
 	void load_blankFile_returnsEmpty() throws Exception {
 		Path file = dir.resolve("token");

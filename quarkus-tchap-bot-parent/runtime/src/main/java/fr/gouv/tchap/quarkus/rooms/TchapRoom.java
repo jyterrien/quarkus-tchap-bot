@@ -1,6 +1,7 @@
 package fr.gouv.tchap.quarkus.rooms;
 
 import fr.gouv.tchap.matrix.message.MessageReceipt;
+import fr.gouv.tchap.matrix.message.OutgoingMessage;
 import fr.gouv.tchap.matrix.room.MatrixRoom;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -74,6 +75,15 @@ public final class TchapRoom {
 	public CompletionStage<MessageReceipt> sendNoticeInThread(String threadRootId, String body) {
 		MatrixRoom r = room;
 		return r == null ? unavailable() : r.sendNoticeInThread(threadRootId, body);
+	}
+
+	/**
+	 * Envoie un message complet : type (texte, notice, emote), version HTML,
+	 * réponse à un message précis, thread. Voir {@link OutgoingMessage}.
+	 */
+	public CompletionStage<MessageReceipt> send(OutgoingMessage message) {
+		MatrixRoom r = room;
+		return r == null ? unavailable() : r.send(message);
 	}
 
 	void bind(MatrixRoom matrixRoom) {

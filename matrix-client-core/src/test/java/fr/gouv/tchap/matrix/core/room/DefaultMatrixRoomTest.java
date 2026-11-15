@@ -93,4 +93,19 @@ class DefaultMatrixRoomTest {
 		assertEquals("m.notice", sent.path("msgtype").asText());
 		assertEquals("$root", sent.path("m.relates_to").path("event_id").asText());
 	}
+
+	@Test
+	void send_goesToTheBoundRoomWithTheRichContent() throws Exception {
+		putReturns("{\"event_id\":\"$e9\"}");
+
+		String eventId = room.send(fr.gouv.tchap.matrix.message.OutgoingMessage.text("re").inReplyTo("$q"))
+				.toCompletableFuture().join().eventId();
+
+		assertEquals("$e9", eventId);
+		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+		verify(transport).put(eq("/_matrix/client/v3/rooms/%21oncall%3As/send/m.room.message/txn1"), eq("tok"),
+				body.capture());
+		assertEquals("$q", new ObjectMapper().readTree(body.getValue()).path("m.relates_to").path("m.in_reply_to")
+				.path("event_id").asText());
+	}
 }

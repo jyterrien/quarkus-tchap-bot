@@ -34,4 +34,11 @@ public interface MatrixRoom {
 
 	/** Comme {@link #sendTextInThread}, avec le msgtype {@code m.notice}. */
 	CompletionStage<MessageReceipt> sendNoticeInThread(String threadRootId, String body);
+
+	/**
+	 * Envoie un message complet (type, HTML, réponse à un message précis, thread)
+	 * dans ce salon ; voir
+	 * {@link fr.gouv.tchap.matrix.message.MessageService#send}.
+	 */
+	CompletionStage<MessageReceipt> send(fr.gouv.tchap.matrix.message.OutgoingMessage message);
 }

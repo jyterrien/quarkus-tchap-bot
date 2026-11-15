@@ -224,9 +224,22 @@ final class FakeHomeserver implements AutoCloseable {
 	 * thread (relation m.thread).
 	 */
 	static String messageEvent(String eventId, String body, String threadRootId) {
-		String relation = threadRootId == null
-				? ""
-				: ",\"m.relates_to\":{\"rel_type\":\"m.thread\",\"event_id\":\"" + threadRootId + "\"}";
+		return messageEvent(eventId, body, threadRootId, null);
+	}
+
+	/**
+	 * Message ; {@code threadRootId} le met dans ce thread (relation m.thread),
+	 * {@code replyToEventId} en fait une réponse à ce message (m.in_reply_to).
+	 */
+	static String messageEvent(String eventId, String body, String threadRootId, String replyToEventId) {
+		String inReplyTo = replyToEventId == null ? "" : "\"m.in_reply_to\":{\"event_id\":\"" + replyToEventId + "\"}";
+		String relation;
+		if (threadRootId != null) {
+			relation = ",\"m.relates_to\":{\"rel_type\":\"m.thread\",\"event_id\":\"" + threadRootId + "\""
+					+ (inReplyTo.isEmpty() ? "" : ",\"is_falling_back\":false," + inReplyTo) + "}";
+		} else {
+			relation = inReplyTo.isEmpty() ? "" : ",\"m.relates_to\":{" + inReplyTo + "}";
+		}
 		return "{\"event_id\":\"" + eventId + "\",\"sender\":\"@alice:s\",\"type\":\"m.room.message\","
 				+ "\"origin_server_ts\":1,\"content\":{\"msgtype\":\"m.text\",\"body\":\"" + body + "\"" + relation
 				+ "}}";
@@ -234,8 +247,8 @@ final class FakeHomeserver implements AutoCloseable {
 
 	/**
 	 * Réponse /sync dont chaque salon contient un message :
-	 * {@code {roomId, eventId, body}}, ou {@code {roomId,
-	 * eventId, body, threadRootId}} pour une réponse dans un thread.
+	 * {@code {roomId, eventId, body}}, avec en 4e élément facultatif la racine d'un
+	 * thread et en 5e l'événement auquel le message répond.
 	 */
 	static String syncWith(String[]... roomEvents) {
 		StringBuilder joined = new StringBuilder();
@@ -244,7 +257,8 @@ final class FakeHomeserver implements AutoCloseable {
 				joined.append(',');
 			}
 			joined.append('"').append(e[0]).append("\":{\"timeline\":{\"events\":[")
-					.append(messageEvent(e[1], e[2], e.length > 3 ? e[3] : null)).append("]}}");
+					.append(messageEvent(e[1], e[2], e.length > 3 ? e[3] : null, e.length > 4 ? e[4] : null))
+					.append("]}}");
 		}
 		return "{\"next_batch\":\"s1\"," + "\"account_data\":{\"events\":[]}," + "\"presence\":{\"events\":[]},"
 				+ "\"to_device\":{\"events\":[]}," + "\"device_lists\":{\"changed\":[],\"left\":[]},"

@@ -69,3 +69,42 @@ magasins de fichiers (`tchap-token-io`, `tchap-credentials-io`).
 
 Les observers des événements CDI s'exécutent sur le pool de workers de Quarkus, pas sur l'event loop Vert.x qui
 exécute la boucle `/sync`.
+
+## Messages enrichis
+
+Un seul point d'entrée pour tout ce qui dépasse le texte simple : `send(OutgoingMessage)` (sur `MatrixRoom`,
+`TchapRoom`, et `send(roomId, message)` sur `MessageService` et `TchapClient`). `OutgoingMessage` est immuable et se
+construit par étapes :
+
+```java
+OutgoingMessage.text("Bien reçu")                                      // m.text
+OutgoingMessage.notice("Déploiement terminé")                          // m.notice
+OutgoingMessage.emote("surveille la file")                             // m.emote
+    .withHtml("<b>Déploiement</b> terminé")                            // format org.matrix.custom.html
+    .inReplyTo("$abc")                                                 // m.in_reply_to
+    .inThread("$root")                                                 // m.thread
+```
+
+- **HTML** : `body` reste obligatoire, c'est le texte de repli (clients sans HTML, notifications). Le serveur ne
+  filtre pas `formatted_body` : n'utiliser que les balises autorisées par la spécification Matrix et passer tout
+  texte venant d'un utilisateur par `OutgoingMessage.escapeHtml(...)`.
+- **Réponse** : `m.in_reply_to` désigne un message précis. La citation de repli dans le texte n'est pas envoyée
+  (retirée de la spécification Matrix 1.13) ; les clients affichent la citation à partir de la relation.
+- **Réponse dans un thread** : `inReplyTo` + `inThread` donnent un `m.thread` dont le `m.in_reply_to` désigne
+  vraiment le message visé (`is_falling_back: false`). `inThread` seul garde le comportement précédent (repli vers la
+  racine, pour les clients sans threads).
+- **Réception** : `MatrixEvent.replyToEventId()` / `TchapMessage.replyToEventId()` donnent le message visé, ou
+  `null`. La réponse de repli que les clients ajoutent dans un thread n'est pas une vraie réponse : elle donne
+  `null`, comme un message sans relation.
+- **Répondre à un message reçu** : `TchapMessage.reply(texte)` construit la réponse ciblée, dans le thread du
+  message s'il en fait partie, sans en ouvrir un sinon. `message.reply("ok").withType(Type.NOTICE)` pour une
+  notice.
+
+```java
+void onMessage(@Observes @TchapRoomName("oncall") TchapMessage message) {
+    oncall.send(message.reply("Bien reçu"));
+}
+```
+
+Les méthodes précédentes (`sendText`, `sendNotice`, `sendTextInThread`, `sendNoticeInThread`) restent et produisent
+le même contenu qu'avant. Un texte vide est refusé (`IllegalArgumentException`).

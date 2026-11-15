@@ -2,6 +2,7 @@ package fr.gouv.tchap.matrix.core.room;
 
 import fr.gouv.tchap.matrix.message.MessageReceipt;
 import fr.gouv.tchap.matrix.message.MessageService;
+import fr.gouv.tchap.matrix.message.OutgoingMessage;
 import fr.gouv.tchap.matrix.room.MatrixRoom;
 import java.util.concurrent.CompletionStage;
 
@@ -42,6 +43,11 @@ public final class DefaultMatrixRoom implements MatrixRoom {
 	@Override
 	public CompletionStage<MessageReceipt> sendNoticeInThread(String threadRootId, String body) {
 		return messages.sendNoticeInThread(roomId, threadRootId, body);
+	}
+
+	@Override
+	public CompletionStage<MessageReceipt> send(OutgoingMessage message) {
+		return messages.send(roomId, message);
 	}
 
 	@Override

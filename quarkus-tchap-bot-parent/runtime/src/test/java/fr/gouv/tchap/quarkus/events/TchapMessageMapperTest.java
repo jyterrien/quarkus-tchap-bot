@@ -130,4 +130,30 @@ class TchapMessageMapperTest {
 		self.set("@bot:s"); // connexion faite : le serveur a donné l'identifiant réel
 		assertTrue(mapper.map(fromServerId).isEmpty());
 	}
+
+	// ---- réponses
+	// ----------------------------------------------------------------------------
+
+	@Test
+	void carriesTheReplyTarget_ofAReply() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+		MatrixEvent reply = new MatrixEvent("$r", "!room:s", "@alice:s", "m.room.message",
+				"{\"msgtype\":\"m.text\",\"body\":\"re\"}", TS, null, "$question");
+
+		TchapMessage m = mapper.map(reply).orElseThrow();
+
+		assertEquals("$question", m.replyToEventId());
+		assertTrue(m.isReply());
+		assertFalse(m.isInThread());
+	}
+
+	@Test
+	void plainMessage_isNotAReply() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		TchapMessage m = mapper.map(event("m.room.message", "@alice:s", "{\"body\":\"salut\"}")).orElseThrow();
+
+		assertNull(m.replyToEventId());
+		assertFalse(m.isReply());
+	}
 }

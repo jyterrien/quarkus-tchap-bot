@@ -2,6 +2,7 @@ package fr.gouv.tchap.quarkus;
 
 import fr.gouv.tchap.matrix.client.MatrixClient;
 import fr.gouv.tchap.matrix.message.MessageReceipt;
+import fr.gouv.tchap.matrix.message.OutgoingMessage;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.util.concurrent.CompletionStage;
@@ -31,5 +32,13 @@ public class TchapClient {
 	/** Comme {@link #sendTextInThread}, avec le msgtype {@code m.notice}. */
 	public CompletionStage<MessageReceipt> sendNoticeInThread(String roomId, String threadRootId, String body) {
 		return matrixClient.messages().sendNoticeInThread(roomId, threadRootId, body);
+	}
+
+	/**
+	 * Envoie un message complet : type (texte, notice, emote), version HTML,
+	 * réponse à un message précis, thread. Voir {@link OutgoingMessage}.
+	 */
+	public CompletionStage<MessageReceipt> send(String roomId, OutgoingMessage message) {
+		return matrixClient.messages().send(roomId, message);
 	}
 }
