@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import fr.gouv.tchap.matrix.auth.Session;
 import fr.gouv.tchap.matrix.auth.TokenProvider;
@@ -14,6 +15,7 @@ import fr.gouv.tchap.matrix.exception.MatrixServerException;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class DefaultMatrixClientAuthTest {
@@ -76,5 +78,46 @@ class DefaultMatrixClientAuthTest {
 		} finally {
 			client.stop().toCompletableFuture().join();
 		}
+	}
+
+	@Test
+	void logout_delegatesToTheTokenProvider() {
+		AtomicInteger logouts = new AtomicInteger();
+		TokenProvider provider = new TokenProvider() {
+			@Override
+			public CompletionStage<String> accessToken() {
+				return CompletableFuture.completedFuture("managed");
+			}
+
+			@Override
+			public CompletionStage<String> renew(String rejectedToken) {
+				return CompletableFuture.failedFuture(new IllegalStateException("not expected"));
+			}
+
+			@Override
+			public CompletionStage<Void> logout() {
+				logouts.incrementAndGet();
+				return CompletableFuture.completedFuture(null);
+			}
+		};
+		DefaultMatrixClient client = new DefaultMatrixClient(scriptedGet("{}"), provider, "@bot:srv",
+				new InMemorySyncTokenStore(), ev -> {
+				}, MatrixClientOptions.defaults());
+
+		client.logout().toCompletableFuture().join();
+
+		assertEquals(1, logouts.get());
+	}
+
+	@Test
+	void logout_withAStaticToken_doesNothing() {
+		HttpTransport transport = scriptedGet("{}");
+		DefaultMatrixClient client = new DefaultMatrixClient(transport, "fixed-token", "@bot:srv",
+				new InMemorySyncTokenStore(), ev -> {
+				}, MatrixClientOptions.defaults());
+
+		client.logout().toCompletableFuture().join();
+
+		verifyNoInteractions(transport);
 	}
 }

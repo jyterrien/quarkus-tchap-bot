@@ -1,6 +1,7 @@
 package fr.gouv.tchap.matrix.auth;
 
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -17,4 +18,14 @@ import java.util.concurrent.CompletionStage;
 public interface CredentialStore {
 	CompletionStage<Optional<Credentials>> load();
 	CompletionStage<Void> save(Credentials credentials);
+
+	/**
+	 * Oublie les identifiants mémorisés, après un logout : ils ne valent plus rien
+	 * côté serveur. Par défaut, sans effet ; un magasin qui laisse d'anciens
+	 * identifiants se rétablit seul au démarrage suivant (token refusé, puis
+	 * nouvelle connexion).
+	 */
+	default CompletionStage<Void> clear() {
+		return CompletableFuture.completedFuture(null);
+	}
 }

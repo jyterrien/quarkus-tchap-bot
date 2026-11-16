@@ -1,5 +1,6 @@
 package fr.gouv.tchap.matrix.auth;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -28,4 +29,17 @@ public interface TokenProvider {
 	 *             qu'aucun moyen de renouveler n'existe : inutile de réessayer
 	 */
 	CompletionStage<String> renew(String rejectedToken);
+
+	/**
+	 * Ferme la session côté serveur ({@code POST /logout}) : le token d'accès et le
+	 * token de renouvellement cessent de valoir, et l'appareil disparaît de la
+	 * liste des sessions du compte. Après un logout réussi, plus aucun token n'est
+	 * fourni ni renouvelé.
+	 * <p>
+	 * Par défaut, sans effet : un token fourni par l'appelant n'est pas une session
+	 * que ce fournisseur a ouverte, il ne la ferme donc pas.
+	 */
+	default CompletionStage<Void> logout() {
+		return CompletableFuture.completedFuture(null);
+	}
 }

@@ -128,6 +128,11 @@ public class DefaultMatrixClient implements MatrixClient {
 	}
 
 	@Override
+	public CompletionStage<Void> logout() {
+		return tokens.logout();
+	}
+
+	@Override
 	public CompletionStage<Void> stop() {
 		status.set(ClientStatus.STOPPING);
 		return syncEngine.stop().thenRun(() -> status.set(ClientStatus.STOPPED));

@@ -114,6 +114,22 @@ public class FileCredentialStore implements CredentialStore, AutoCloseable {
 	}
 
 	/**
+	 * Supprime le fichier (et son éventuel fichier temporaire) ; absent n'est pas
+	 * une erreur.
+	 */
+	@Override
+	public CompletionStage<Void> clear() {
+		return submit(() -> CompletableFuture.runAsync(() -> {
+			try {
+				Files.deleteIfExists(file);
+				Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".tmp"));
+			} catch (IOException e) {
+				throw new UncheckedIOException("Cannot delete credentials file " + file, e);
+			}
+		}, io));
+	}
+
+	/**
 	 * Un magasin fermé échoue proprement au lieu de lever depuis le thread
 	 * appelant.
 	 */

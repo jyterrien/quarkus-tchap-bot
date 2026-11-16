@@ -122,6 +122,19 @@ public interface TchapConfig {
 		StoreType store();
 
 		/**
+		 * Ferme la session sur le serveur à l'arrêt de l'application (mode
+		 * {@code password} uniquement) : le token est invalidé et l'appareil disparaît
+		 * de la liste des sessions du compte. Par défaut : {@code true} avec
+		 * {@code store=memory} (la session ne pourrait de toute façon pas être reprise
+		 * au démarrage suivant, et chaque démarrage crée un appareil), {@code false}
+		 * sinon (identifiants persistés pour reprendre la session). À laisser à
+		 * {@code false} quand la session doit survivre à un redémarrage, par exemple
+		 * dans Kubernetes ou avec le chiffrement de bout en bout lié à l'appareil.
+		 */
+		@WithName("logout-on-shutdown")
+		Optional<Boolean> logoutOnShutdown();
+
+		/**
 		 * Chemin du fichier des identifiants quand {@code store=file}. Il contient des
 		 * secrets : le créer hors du dépôt, lisible par son seul propriétaire.
 		 */

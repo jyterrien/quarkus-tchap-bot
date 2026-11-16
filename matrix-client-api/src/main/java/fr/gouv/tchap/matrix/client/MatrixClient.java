@@ -18,6 +18,18 @@ public interface MatrixClient {
 	/** Arrête proprement le client. */
 	CompletionStage<Void> stop();
 
+	/**
+	 * Ferme la session sur le serveur : le token est invalidé et l'appareil
+	 * disparaît des sessions du compte. À appeler après {@link #stop()}. Sans effet
+	 * quand le token a été fourni par l'appelant plutôt qu'obtenu par connexion
+	 * avec un mot de passe. Après un logout, le client ne peut plus s'authentifier.
+	 * <p>
+	 * Ne pas l'appeler quand la session doit survivre à l'arrêt (identifiants
+	 * persistés pour reprendre au démarrage suivant, chiffrement de bout en bout
+	 * lié à l'appareil).
+	 */
+	CompletionStage<Void> logout();
+
 	MessageService messages();
 
 	RoomService rooms();

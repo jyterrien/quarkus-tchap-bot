@@ -25,4 +25,10 @@ public class InMemoryCredentialStore implements CredentialStore {
 		stored.set(credentials);
 		return CompletableFuture.completedFuture(null);
 	}
+
+	@Override
+	public CompletionStage<Void> clear() {
+		stored.set(null);
+		return CompletableFuture.completedFuture(null);
+	}
 }

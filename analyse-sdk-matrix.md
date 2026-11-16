@@ -62,7 +62,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 
 | # | Manque | Statut | Détail |
 |---|--------|--------|--------|
-| 1 | **Login / logout / refresh** | ⚠️ | ✅ `/login` (mot de passe) et `/refresh` ; renouvellement à l'avance et sur 401 ; repli sur nouveau login ; identifiants persistés (`CredentialStore`). ❌ **`/logout` absent** : le bot ne ferme pas sa session à l'arrêt, des sessions s'accumulent sur le compte (voir 29). |
+| 1 | **Login / logout / refresh** | ✅ | `/login` (mot de passe), `/refresh` et `/logout` ; renouvellement à l'avance et sur 401 ; repli sur nouveau login ; identifiants persistés et oubliés au logout (`CredentialStore.clear`). La session est fermée à l'arrêt selon `quarkus.tchap.auth.logout-on-shutdown` (voir 29). |
 | 2 | **Messages enrichis** : `m.emote`, `m.image`, `m.file`, `m.audio`, `m.video`, `m.location` + upload média | ⚠️ | ✅ `m.emote` (`OutgoingMessage.emote`). ❌ Images, fichiers, audio, vidéo, position : l'upload média manque, et le transport ne permet pas l'upload binaire. |
 | 3 | **Réponses / threads / relations** : `m.in_reply_to`, `m.thread`, `m.replace`, `m.reaction` | ✅ | `m.thread` et `m.in_reply_to` (`OutgoingMessage.inReplyTo` / `inThread`, `TchapMessage.reply`), éditions (`edit`) et réactions (`react`), en émission et en réception, jusqu'à l'extension Quarkus (`TchapMessageEdited`, `TchapReaction`). Une édition reçue n'est plus publiée comme un nouveau message. Reste : **retirer une réaction** et supprimer un message (`/redact`, voir 5quater). |
 | 4 | **Formatage** : `format: org.matrix.custom.html`, `formatted_body` | ✅ | `OutgoingMessage.withHtml` + `escapeHtml`. Pas de conversion markdown → HTML ni de filtrage des balises : à la charge de l'appelant. |
@@ -71,7 +71,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 | 5quater | **`HttpTransport.delete(...)`** + `send(method, path, headers, body)` | ❌ | Leave/kick/redact/forget/media. |
 | 6 | **Backoff typé** | ✅ | Identifiants refusés → arrêt ; réseau/5xx/429 → retry. |
 | 7 | **Typing / presence / read receipts** | ❌ | `sendTyping`, `sendReceipt` : triviaux, rendent un bot « vivant ». |
-| 29 | **Logout à l'arrêt** _(nouveau)_ | ❌ | Fermer proprement la session créée par le mode `password` (`POST /logout`), et supprimer le fichier d'identifiants ou le marquer invalide. |
+| 29 | **Logout à l'arrêt** _(nouveau)_ | ✅ | `MatrixClient.logout()` et `TchapLifecycle` : `POST /logout` à l'arrêt en mode `password`, par défaut seulement quand les identifiants ne sont pas persistés (`store=memory`). Opt-in sinon, car supprimer l'appareil est incompatible avec une session à reprendre (Kubernetes, chiffrement de bout en bout). Identifiants oubliés ensuite. Les sessions déjà accumulées se suppriment par la gestion des devices (#20). |
 
 ### P1 — Nécessaires pour un bot robuste en production
 
@@ -120,12 +120,13 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 - ✅ Threads en émission et en réception, côté SDK et côté extension (#3 partiel, #26 partiel)
 - ✅ Messages enrichis : réponse à un message précis (`m.in_reply_to`), HTML (`formatted_body`), `m.emote`, réponse dans un thread ; `OutgoingMessage` et `send(...)` (#3, #4, #2 partiel)
 - ✅ Éditions (`m.replace`) et réactions (`m.reaction`) en émission et en réception ; une édition reçue n'est plus republiée comme un nouveau message (#3)
+- ✅ Logout à l'arrêt (`POST /logout`), avec `logout-on-shutdown` et oubli des identifiants ; arrêt propre de la sync et des magasins (#1, #29)
 - ✅ Sondes de santé readiness / liveness, `SyncHealth` (#24 partiel)
 
 ### Sprint 1 (bot utilisable)
 
 1. ~~**Messages riches** : `m.in_reply_to`, HTML, `m.emote`, éditions, réactions~~ — ✅ fait via `OutgoingMessage`, `send`, `edit`, `react` (#3, #4). Reste : `MessageService.sendEvent(roomId, type, content)` pour les événements arbitraires (#12), retrait d'une réaction et suppression de message (`/redact`).
-2. **Logout à l'arrêt** (#1, #29).
+2. ~~**Logout à l'arrêt** (#1, #29)~~ — ✅ fait.
 3. **Refonte des exceptions** : `MatrixTransportException` et `RateLimitException` sous `MatrixException`/`MatrixServerException` (#5ter) — **en préservant la distinction 429 / refus définitif** (voir vigilance).
 4. **`HttpTransport.delete()`** + `send(method, path, headers, body)` générique ; `setIdleTimeout` (#5quater, #17bis, #17quater).
 5. `MediaService` (upload + `m.image`/`m.file`) — dépend de 4.
@@ -155,7 +156,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 
 - **429 et `isClientError()`** : aujourd'hui `RateLimitException` n'est pas une `MatrixServerException`, donc `PasswordTokenProvider` traite un 429 comme erreur transitoire (pas de reconnexion). **Quand `RateLimitException` sera rattachée à `MatrixServerException` (5ter), `isClientError()` renverra vrai pour un 429** et le fournisseur le prendrait pour un refus définitif (« login refused »). À corriger dans la même modification : exclure le statut 429 de `isClientError()`, avec un test.
 - **Mode `token` : un token refusé met le client en `FAILED`** (liveness DOWN) au lieu de réessayer indéfiniment. Comportement voulu, mais changement par rapport à avant.
-- **Mode `password`, stockage `memory`** : nouvelle connexion à chaque démarrage, donc un appareil de plus sur le compte (si le serveur n'en réutilise pas) tant que le logout (29) n'existe pas. Utiliser `file` en attendant.
+- **Mode `password`, stockage `memory`** : nouvelle connexion à chaque démarrage, donc un appareil de plus sur le compte (si le serveur n'en réutilise pas) sauf si `logout-on-shutdown` (activé par défaut avec `store=memory`) ferme la session à l'arrêt. Un arrêt brutal (kill, crash) ne se déconnecte pas : la session reste jusqu'à son expiration ; utiliser `file` pour la reprendre.
 - **`initial-limit` par défaut à 20** (extension) : au premier sync d'un démarrage sans token de reprise, les 20 derniers messages de chaque salon sont rejoués et le bot y répond à nouveau. Pour un bot qui répond, préférer `initial-limit=0` et/ou `sync.store=file`.
 - **Sonde de liveness et indisponibilité du homeserver** : `quarkus.tchap.health.sync-max-silence` (2 min par défaut) fait passer la liveness à DOWN quand le serveur est injoignable trop longtemps ; un orchestrateur qui redémarre sur liveness DOWN le fera sans régler la panne. À dimensionner selon les coupures tolérées.
 - **`DefaultMatrixClient.start()`** : passe `RUNNING` avant la fin du premier sync (sans écraser un `FAILED` survenu entre-temps). Une panne transitoire du premier sync laisse `RUNNING` : la progression réelle se lit dans `syncHealth()` / la liveness.
@@ -169,7 +170,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 ## Tickets à ouvrir tout de suite
 
 1. ~~`MessageService` : réponses, HTML, `m.emote`, éditions, réactions~~ — fait. Reste : `/redact` (supprimer un message, retirer une réaction).
-2. `AuthService.logout()` + appel à l'arrêt de l'extension en mode `password`.
+2. ~~`logout()` à l'arrêt de l'extension en mode `password`~~ — fait.
 3. Aligner la hiérarchie d'exceptions sur le contrat `HttpTransport` (`RateLimitException`, `MatrixTransportException`) **et** exclure le 429 de `MatrixServerException.isClientError()`.
 4. `HttpTransport#delete(String, String)` + `send(method, path, headers, body)`.
 5. Headers custom + `Content-Type` paramétrable.

@@ -63,6 +63,7 @@ En mode `password` :
 | `quarkus.tchap.auth.device-name` | `quarkus-tchap-bot` | Nom de l'appareil affiché pour la session du bot. |
 | `quarkus.tchap.auth.store` | `memory` | Stockage des identifiants : `memory` ou `file`. |
 | `quarkus.tchap.auth.store-path` | `.tchap/credentials.json` | Fichier des identifiants quand `store=file`. |
+| `quarkus.tchap.auth.logout-on-shutdown` | selon le stockage | Ferme la session sur le serveur à l'arrêt (mode `password`). Voir ci-dessous. |
 
 **Stockage des identifiants.** Le refresh token est à usage unique : chaque renouvellement en émet un nouveau, qui
 doit être conservé. Avec `store=memory`, le bot se reconnecte avec le mot de passe à chaque démarrage (et crée un
@@ -72,3 +73,23 @@ dépôt et, en conteneur, sur un volume persistant. Pour un autre stockage (base
 propre bean `CredentialStore` : il remplace celui de l'extension, comme pour `SyncTokenStore`. `save` est appelé
 depuis un thread Vert.x : y faire les accès bloquants sur un exécuteur dédié à un seul thread, pour garder l'ordre
 des écritures.
+
+**Fermeture de la session à l'arrêt (logout).** Chaque connexion par mot de passe crée une session (un appareil)
+sur le compte du bot. Avec `quarkus.tchap.auth.logout-on-shutdown`, le bot la ferme à l'arrêt (`POST /logout`) : le
+token est invalidé et l'appareil disparaît de la liste des sessions du compte.
+
+| Cas | Valeur par défaut |
+|---|---|
+| mode `token` | jamais : la session n'est pas celle du bot |
+| mode `password`, `store=memory` | `true` : la session ne pourrait pas être reprise au démarrage suivant, et chaque démarrage crée un appareil |
+| mode `password`, `store=file` ou `CredentialStore` fourni par l'application | `false` : les identifiants sont conservés pour reprendre la session |
+
+À laisser à `false` quand la session doit survivre à un redémarrage : conteneurs redémarrés par Kubernetes, ou
+chiffrement de bout en bout (les clés sont liées à l'appareil, le supprimer les perd). Avec `true` et un
+stockage persistant, le fichier ou l'entrée d'identifiants est supprimé après la fermeture.
+
+Le logout ne bloque jamais l'arrêt : au plus 5 secondes, et un échec (serveur injoignable) n'est qu'un
+avertissement, la session expirera d'elle-même. Un token expiré est d'abord renouvelé par `/refresh`, jamais par une
+nouvelle connexion ; si le serveur ne reconnaît plus la session, elle est considérée comme fermée. Après un logout,
+plus aucune requête tardive ne peut rouvrir une session. En développement (`quarkus:dev`), chaque rechargement
+arrête puis redémarre l'application, donc se déconnecte et se reconnecte quand `store=memory`.

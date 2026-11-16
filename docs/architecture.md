@@ -140,3 +140,12 @@ void onEdit(@Observes TchapMessageEdited edit) {
   l'extension.
 - `MessageService.sendEvent` n'existe pas encore, mais `MatrixHttpApi.sendEvent(roomId, type, txnId, json)` envoie
   un événement de type quelconque (utilisé pour `m.reaction`).
+
+## Fermeture de la session
+
+`MatrixClient.logout()` (à appeler après `stop()`) ferme la session sur le serveur par `TokenProvider.logout()` :
+sans effet pour un `StaticTokenProvider`, `POST /logout` pour un `PasswordTokenProvider`, qui oublie ensuite les
+identifiants (`CredentialStore.clear()` : mémoire vidée, fichier supprimé) et refuse désormais de fournir ou de
+renouveler un token. `TchapLifecycle` l'appelle à l'arrêt de Quarkus, après l'arrêt de la synchronisation et avant la
+fermeture du transport, quand `quarkus.tchap.auth.logout-on-shutdown` le demande (voir `docs/configuration.md`), y
+compris quand la synchronisation est désactivée.

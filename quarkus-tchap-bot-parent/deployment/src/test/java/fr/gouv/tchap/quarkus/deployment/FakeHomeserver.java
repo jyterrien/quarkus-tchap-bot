@@ -149,6 +149,12 @@ final class FakeHomeserver implements AutoCloseable {
 		return this;
 	}
 
+	/** {@code POST /logout} réussit. */
+	FakeHomeserver logout() {
+		server.stubFor(post(urlPathEqualTo(PREFIX + "logout")).willReturn(okJson("{}")));
+		return this;
+	}
+
 	/** {@code POST /refresh} réussit. */
 	FakeHomeserver refresh(String accessToken, String refreshToken, long expiresInMs) {
 		server.stubFor(post(urlPathEqualTo(PREFIX + "refresh")).willReturn(okJson("{\"access_token\":\"" + accessToken
@@ -174,6 +180,12 @@ final class FakeHomeserver implements AutoCloseable {
 	List<String> logins() {
 		return received(postRequestedFor(urlPathEqualTo(PREFIX + "login"))).stream().map(LoggedRequest::getBodyAsString)
 				.toList();
+	}
+
+	/** En-têtes Authorization des {@code POST /logout} reçus. */
+	List<String> logouts() {
+		return received(postRequestedFor(urlPathEqualTo(PREFIX + "logout"))).stream()
+				.map(request -> request.getHeader("Authorization")).toList();
 	}
 
 	/** Corps JSON des {@code POST /refresh} reçus. */

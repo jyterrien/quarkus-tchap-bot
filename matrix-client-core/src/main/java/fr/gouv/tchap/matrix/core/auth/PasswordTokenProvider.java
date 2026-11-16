@@ -65,6 +65,12 @@ public final class PasswordTokenProvider implements TokenProvider {
 	private volatile Credentials current;
 	/** Renouvellement en cours ; protégé par {@code this}. */
 	private CompletableFuture<String> inflight;
+	/**
+	 * Vrai après un logout réussi : plus aucun token ne doit être fourni ni
+	 * renouvelé (sinon une requête tardive rouvrirait une session aussitôt après la
+	 * fermeture de l'ancienne).
+	 */
+	private volatile boolean loggedOut;
 
 	public PasswordTokenProvider(HttpTransport transport, String userId, String password, CredentialStore store,
 			String deviceName) {
@@ -90,6 +96,9 @@ public final class PasswordTokenProvider implements TokenProvider {
 
 	@Override
 	public CompletionStage<String> accessToken() {
+		if (loggedOut) {
+			return CompletableFuture.failedFuture(sessionClosed());
+		}
 		Credentials c = current;
 		if (c != null && !isExpiring(c)) {
 			return CompletableFuture.completedFuture(c.accessToken());
@@ -100,6 +109,9 @@ public final class PasswordTokenProvider implements TokenProvider {
 	@Override
 	public CompletionStage<String> renew(String rejectedToken) {
 		synchronized (this) {
+			if (loggedOut) {
+				return CompletableFuture.failedFuture(sessionClosed());
+			}
 			Credentials c = current;
 			if (c != null && rejectedToken != null && !rejectedToken.equals(c.accessToken())) {
 				// Un autre appel a déjà renouvelé le token refusé
@@ -132,6 +144,92 @@ public final class PasswordTokenProvider implements TokenProvider {
 			});
 			return result;
 		}
+	}
+
+	/**
+	 * Ferme la session ({@code POST /logout}) avec le token courant, puis oublie
+	 * les identifiants (mémoire et magasin). Sans effet si ce fournisseur ne s'est
+	 * pas connecté dans ce processus, ou s'il s'est déjà déconnecté.
+	 *
+	 * Un token expiré est d'abord renouvelé par {@code /refresh} — jamais par une
+	 * nouvelle connexion, qui créerait une session pour la fermer aussitôt. Si le
+	 * serveur ne reconnaît déjà plus la session (token et refresh token refusés),
+	 * elle est considérée comme fermée. Une erreur transitoire (réseau, 5xx) fait
+	 * échouer le logout et laisse les identifiants intacts : la session existe
+	 * encore.
+	 */
+	@Override
+	public CompletionStage<Void> logout() {
+		CompletableFuture<String> pending;
+		synchronized (this) {
+			pending = inflight;
+		}
+		// Un renouvellement en cours peut remplacer les tokens : on attend qu'il se
+		// termine
+		CompletionStage<Void> settled = pending == null
+				? CompletableFuture.<Void>completedFuture(null)
+				: pending.<Void>handle((token, ex) -> null);
+		return settled.thenCompose(ignored -> {
+			Credentials c = current;
+			if (loggedOut || c == null) {
+				return CompletableFuture.<Void>completedFuture(null);
+			}
+			return logoutWith(c);
+		});
+	}
+
+	private CompletionStage<Void> logoutWith(Credentials c) {
+		return postLogout(c.accessToken()).exceptionallyCompose(ex -> {
+			Throwable cause = unwrap(ex);
+			if (!isTokenRejected(cause)) {
+				return CompletableFuture.<Void>failedFuture(cause);
+			}
+			if (!c.hasRefreshToken()) {
+				// Token refusé et rien pour le renouveler : le serveur a déjà fermé la session
+				return CompletableFuture.<Void>completedFuture(null);
+			}
+			return refresh(c).thenCompose(this::postLogout).exceptionallyCompose(retryEx -> {
+				Throwable retryCause = unwrap(retryEx);
+				// Refresh token refusé, ou nouveau token refusé : la session n'existe plus
+				return isDefinitiveRefusal(retryCause)
+						? CompletableFuture.<Void>completedFuture(null)
+						: CompletableFuture.<Void>failedFuture(retryCause);
+			});
+		}).thenCompose(done -> finishLogout());
+	}
+
+	private CompletionStage<Void> postLogout(String accessToken) {
+		return transport.post(API_PREFIX + "/logout", accessToken, "{}").thenApply(body -> null);
+	}
+
+	/**
+	 * La session est fermée : plus de token, et les identifiants mémorisés ne
+	 * valent plus rien.
+	 */
+	private CompletionStage<Void> finishLogout() {
+		loggedOut = true;
+		current = null;
+		LOG.log(INFO, "Logged out: the session was closed on the homeserver");
+		CompletionStage<Void> cleared;
+		try {
+			cleared = store.clear();
+		} catch (RuntimeException e) {
+			cleared = CompletableFuture.failedFuture(e);
+		}
+		return cleared.<Void>handle((v, ex) -> {
+			if (ex != null) {
+				LOG.log(WARNING, "Could not clear the stored credentials: {0}", unwrap(ex).getMessage());
+			}
+			return null;
+		});
+	}
+
+	private static AuthenticationException sessionClosed() {
+		return new AuthenticationException("Session closed: the bot has logged out");
+	}
+
+	private static boolean isTokenRejected(Throwable cause) {
+		return cause instanceof MatrixServerException server && server.isTokenRejected();
 	}
 
 	/**

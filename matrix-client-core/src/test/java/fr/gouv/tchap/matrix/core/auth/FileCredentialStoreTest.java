@@ -116,4 +116,46 @@ class FileCredentialStoreTest {
 
 		assertInstanceOf(IllegalStateException.class, failure.getCause());
 	}
+
+	@Test
+	void clear_deletesTheFile_andTheTemporaryFile() throws Exception {
+		Path file = dir.resolve("c.json");
+		FileCredentialStore store = new FileCredentialStore(file);
+		store.save(SAMPLE).toCompletableFuture().join();
+		Files.writeString(dir.resolve("c.json.tmp"), "reste d'une écriture interrompue");
+
+		store.clear().toCompletableFuture().join();
+
+		assertFalse(Files.exists(file));
+		assertFalse(Files.exists(dir.resolve("c.json.tmp")));
+		assertTrue(store.load().toCompletableFuture().join().isEmpty());
+	}
+
+	@Test
+	void clear_ofAMissingFile_isNotAnError() {
+		assertDoesNotThrow(
+				() -> new FileCredentialStore(dir.resolve("none.json")).clear().toCompletableFuture().join());
+	}
+
+	@Test
+	void afterClear_aNewSaveWorks() {
+		FileCredentialStore store = new FileCredentialStore(dir.resolve("c.json"));
+		store.save(SAMPLE).toCompletableFuture().join();
+		store.clear().toCompletableFuture().join();
+
+		store.save(SAMPLE).toCompletableFuture().join();
+
+		assertEquals(SAMPLE, store.load().toCompletableFuture().join().orElseThrow());
+	}
+
+	@Test
+	void clear_afterClose_failsCleanly() {
+		FileCredentialStore store = new FileCredentialStore(dir.resolve("c.json"));
+		store.close();
+
+		CompletionException failure = assertThrows(CompletionException.class,
+				() -> store.clear().toCompletableFuture().join());
+
+		assertInstanceOf(IllegalStateException.class, failure.getCause());
+	}
 }
