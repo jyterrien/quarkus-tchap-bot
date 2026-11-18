@@ -5,14 +5,16 @@ import java.util.concurrent.CompletionStage;
 /**
  * Contrat de transport HTTP vers un homeserver Matrix. Indépendant de toute
  * bibliothèque HTTP. Contrat d'erreur : en cas d'échec, le CompletionStage se
- * termine exceptionnellement avec une MatrixException (ou RateLimitException
- * pour un 429). Un statut HTTP 4xx/5xx est une MatrixServerException, qui porte
- * le statut et le code d'erreur Matrix. {@code accessToken} peut être
- * {@code null} : aucun en-tête Authorization n'est alors envoyé (requêtes
- * {@code /login} et {@code /refresh}). Cycle de vie : celui qui crée un
- * transport en est propriétaire et doit le fermer. Ni MatrixClient ni les
- * services du core ne ferment le transport qu'on leur injecte. {@link #close()}
- * ne fait rien par défaut (transports sans ressource à libérer).
+ * termine exceptionnellement avec une MatrixException : une
+ * MatrixTransportException quand la requête n'a pas abouti (réseau, connexion
+ * coupée, transport fermé), une MatrixServerException pour un statut HTTP
+ * 4xx/5xx (elle porte le statut et le code d'erreur Matrix), et sa sous-classe
+ * RateLimitException pour un 429. {@code accessToken} peut être {@code null} :
+ * aucun en-tête Authorization n'est alors envoyé (requêtes {@code /login} et
+ * {@code /refresh}). Cycle de vie : celui qui crée un transport en est
+ * propriétaire et doit le fermer. Ni MatrixClient ni les services du core ne
+ * ferment le transport qu'on leur injecte. {@link #close()} ne fait rien par
+ * défaut (transports sans ressource à libérer).
  */
 public interface HttpTransport extends AutoCloseable {
 

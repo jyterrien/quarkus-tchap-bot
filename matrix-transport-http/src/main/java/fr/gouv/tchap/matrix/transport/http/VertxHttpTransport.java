@@ -2,7 +2,7 @@ package fr.gouv.tchap.matrix.transport.http;
 
 import static java.lang.System.Logger.Level.WARNING;
 
-import fr.gouv.tchap.matrix.exception.MatrixException;
+import fr.gouv.tchap.matrix.exception.MatrixTransportException;
 import fr.gouv.tchap.matrix.exception.MatrixServerException;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
@@ -157,12 +157,12 @@ public class VertxHttpTransport implements HttpTransport {
 
 	private CompletionStage<String> call(Supplier<Future<HttpResponse<Buffer>>> action) {
 		if (closed.get())
-			return failed(new MatrixException("Transport is closed"));
+			return failed(new MatrixTransportException("Transport is closed"));
 		try {
 			return handle(action.get());
 		} catch (RuntimeException e) {
 			// Fermeture concurrente : Vert.x peut lever l'exception de façon synchrone
-			return failed(new MatrixException("Vert.x transport error: " + e.getMessage(), e));
+			return failed(new MatrixTransportException("Vert.x transport error: " + e.getMessage(), e));
 		}
 	}
 
@@ -177,7 +177,7 @@ public class VertxHttpTransport implements HttpTransport {
 		future.onComplete(ar -> {
 			if (ar.failed()) {
 				result.completeExceptionally(
-						new MatrixException("Vert.x transport error: " + ar.cause().getMessage(), ar.cause()));
+						new MatrixTransportException("Vert.x transport error: " + ar.cause().getMessage(), ar.cause()));
 				return;
 			}
 			HttpResponse<Buffer> resp = ar.result();

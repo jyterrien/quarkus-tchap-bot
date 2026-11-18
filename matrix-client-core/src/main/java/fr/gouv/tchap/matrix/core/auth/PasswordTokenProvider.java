@@ -369,7 +369,8 @@ public final class PasswordTokenProvider implements TokenProvider {
 	}
 
 	/**
-	 * Refus définitif du serveur : 4xx autre que 429 (déjà une RateLimitException).
+	 * Refus définitif du serveur : 4xx autre que 429 (voir
+	 * MatrixServerException#isClientError).
 	 */
 	private static boolean isDefinitiveRefusal(Throwable cause) {
 		return cause instanceof MatrixServerException server && server.isClientError();

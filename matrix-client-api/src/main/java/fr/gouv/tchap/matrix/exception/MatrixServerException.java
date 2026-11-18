@@ -1,9 +1,10 @@
 package fr.gouv.tchap.matrix.exception;
 
 /**
- * Erreur renvoyée par le homeserver (statut HTTP 4xx/5xx, hors 429 qui est une
- * {@link RateLimitException}). Le message est « HTTP &lt;statut&gt;:
- * &lt;corps&gt; » ; le code d'erreur Matrix est exposé à part.
+ * Erreur renvoyée par le homeserver (statut HTTP 4xx/5xx). Le 429 en est un cas
+ * particulier : {@link RateLimitException}, sous-classe de celle-ci. Le message
+ * est « HTTP &lt;statut&gt;: &lt;corps&gt; » ; le code d'erreur Matrix est
+ * exposé à part.
  */
 public class MatrixServerException extends MatrixException {
 
@@ -46,10 +47,24 @@ public class MatrixServerException extends MatrixException {
 	}
 
 	/**
-	 * Vrai pour un refus définitif de la requête (4xx) : la rejouer à l'identique
-	 * ne changera rien.
+	 * Refus définitif de la requête : 4xx autre que 429. La rejouer à l'identique
+	 * ne changera rien. Le 429 (voir {@link #isRateLimited()}) n'en est pas un : il
+	 * réussira après un délai.
 	 */
 	public boolean isClientError() {
-		return statusCode >= 400 && statusCode < 500;
+		return statusCode >= 400 && statusCode < 500 && statusCode != 429;
+	}
+
+	/** Le serveur limite le débit (429) : réessayer après un délai. */
+	public boolean isRateLimited() {
+		return statusCode == 429;
+	}
+
+	/**
+	 * Erreur du serveur (5xx) : en général transitoire, la requête peut être
+	 * rejouée.
+	 */
+	public boolean isServerError() {
+		return statusCode >= 500 && statusCode < 600;
 	}
 }

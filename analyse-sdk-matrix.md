@@ -34,7 +34,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 | Point | Statut |
 |---|---|
 | **Transport absent** | ✅ `VertxHttpTransport` : timeouts (connect 30 s), keep-alive, fermeture idempotente, propriété Vert.x. |
-| **Rate limit** | ⚠️ `RateLimitException` alimentée par `retry_after_ms` puis `Retry-After`, consommée par `SyncEngine.retryDelayMs`. Reste la hiérarchie d'exceptions (voir 5ter). |
+| **Rate limit** | ✅ `RateLimitException` (sous-classe de `MatrixServerException`) alimentée par `retry_after_ms` puis `Retry-After`, consommée par `SyncEngine.retryDelayMs` ; le 429 n'est pas un refus définitif (`isClientError()` l'exclut). |
 | **Backoff typé** | ✅ `SyncEngine` s'arrête sur identifiants refusés (`AuthenticationException`) ; erreurs transitoires (réseau, 5xx, 429) réessayées. Un 403 isolé sur `/sync` hors problème de token reste réessayé. |
 | **Erreurs structurées** | ✅ `VertxHttpTransport` lève `MatrixServerException` (statut, `errcode`, `soft_logout`) ; le message « HTTP code: corps » est conservé. |
 | **Observabilité** | ⚠️ `SyncHealth` + sondes de santé Quarkus. Pas de hooks (`onSyncError`, `onTokenInvalid`) ni de métriques. |
@@ -44,7 +44,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 ## Constats sur le transport
 
 1. ❌ **Aucun timeout de lecture/écriture applicatif** : `setConnectTimeout(30_000)` ne couvre que la connexion TCP. Un `sendMessage` peut bloquer indéfiniment si le serveur ne répond pas. Il faut `setIdleTimeout` ou un timeout par requête. _(La liveness détecte désormais une boucle de sync bloquée, mais pas un envoi bloqué.)_
-2. ⚠️ **`MatrixTransportException` n'est jamais levée** par `VertxHttpTransport`. La hiérarchie reste incohérente : `RateLimitException extends MatrixTransportException extends RuntimeException`, alors que `MatrixServerException extends MatrixException`. Le contrat `HttpTransport` annonce `MatrixException` : **un `catch (MatrixException)` rate toujours les 429.**
+2. ✅ **Hiérarchie d'exceptions** : `MatrixException` est la racine de tout (`AuthenticationException`, `MatrixTransportException`, `MatrixServerException` et sa sous-classe `RateLimitException`). `VertxHttpTransport` lève `MatrixTransportException` pour les erreurs réseau et transport fermé ; un seul `catch (MatrixException)` attrape tout, le 429 compris.
 3. ❌ **Pas de retry transport** : un 502/503 transitoire remonte tel quel ; `SyncEngine` retente à 5 s, mais `MessageService` échoue immédiatement (correct pour l'idempotence via txnId, mais un retry opt-in manque).
 4. ❌ **Aucun `DELETE`** dans `HttpTransport` : nécessaire pour redaction, forget, kick, `delete_devices`, pushers.
 5. ❌ **Pas de `PATCH`** ; `PUT` uniquement pour l'envoi. Le `DELETE` est le manque réel.
@@ -67,7 +67,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 | 3 | **Réponses / threads / relations** : `m.in_reply_to`, `m.thread`, `m.replace`, `m.reaction` | ✅ | `m.thread` et `m.in_reply_to` (`OutgoingMessage.inReplyTo` / `inThread`, `TchapMessage.reply`), éditions (`edit`) et réactions (`react`), en émission et en réception, jusqu'à l'extension Quarkus (`TchapMessageEdited`, `TchapReaction`). Une édition reçue n'est plus publiée comme un nouveau message. Reste : **retirer une réaction** et supprimer un message (`/redact`, voir 5quater). |
 | 4 | **Formatage** : `format: org.matrix.custom.html`, `formatted_body` | ✅ | `OutgoingMessage.withHtml` + `escapeHtml`. Pas de conversion markdown → HTML ni de filtrage des balises : à la charge de l'appelant. |
 | 5bis | **Erreurs Matrix typées** | ✅ | `MatrixServerException(statut, errcode, soft_logout)` ; `SyncEngine` arrête la boucle sur identifiants refusés ; client en `FAILED` (sondes DOWN). |
-| 5ter | **Cohérence de la hiérarchie d'exceptions** | ❌ | `MatrixException` racine ; `MatrixTransportException` et `RateLimitException` à y rattacher (`RateLimitException extends MatrixServerException`). **Attention : voir « Points de vigilance » (429 et `isClientError`).** |
+| 5ter | **Cohérence de la hiérarchie d'exceptions** | ✅ | `MatrixException` racine de tout ; `MatrixTransportException` (réseau) et `RateLimitException extends MatrixServerException` (429) rattachées ; `isClientError()` exclut le 429, `isRateLimited()` et `isServerError()` ajoutés. Les deux classes passent dans `matrix-client-api`, même paquet. |
 | 5quater | **`HttpTransport.delete(...)`** + `send(method, path, headers, body)` | ❌ | Leave/kick/redact/forget/media. |
 | 6 | **Backoff typé** | ✅ | Identifiants refusés → arrêt ; réseau/5xx/429 → retry. |
 | 7 | **Typing / presence / read receipts** | ❌ | `sendTyping`, `sendReceipt` : triviaux, rendent un bot « vivant ». |
@@ -120,6 +120,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 - ✅ Threads en émission et en réception, côté SDK et côté extension (#3 partiel, #26 partiel)
 - ✅ Messages enrichis : réponse à un message précis (`m.in_reply_to`), HTML (`formatted_body`), `m.emote`, réponse dans un thread ; `OutgoingMessage` et `send(...)` (#3, #4, #2 partiel)
 - ✅ Éditions (`m.replace`) et réactions (`m.reaction`) en émission et en réception ; une édition reçue n'est plus republiée comme un nouveau message (#3)
+- ✅ Hiérarchie d'exceptions unifiée sous `MatrixException` ; `RateLimitException` sous `MatrixServerException`, 429 exclu de `isClientError()` (#5ter)
 - ✅ Logout à l'arrêt (`POST /logout`), avec `logout-on-shutdown` et oubli des identifiants ; arrêt propre de la sync et des magasins (#1, #29)
 - ✅ Sondes de santé readiness / liveness, `SyncHealth` (#24 partiel)
 
@@ -127,7 +128,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 
 1. ~~**Messages riches** : `m.in_reply_to`, HTML, `m.emote`, éditions, réactions~~ — ✅ fait via `OutgoingMessage`, `send`, `edit`, `react` (#3, #4). Reste : `MessageService.sendEvent(roomId, type, content)` pour les événements arbitraires (#12), retrait d'une réaction et suppression de message (`/redact`).
 2. ~~**Logout à l'arrêt** (#1, #29)~~ — ✅ fait.
-3. **Refonte des exceptions** : `MatrixTransportException` et `RateLimitException` sous `MatrixException`/`MatrixServerException` (#5ter) — **en préservant la distinction 429 / refus définitif** (voir vigilance).
+3. ~~**Refonte des exceptions**~~ — ✅ fait (#5ter), avec la distinction 429 / refus définitif préservée.
 4. **`HttpTransport.delete()`** + `send(method, path, headers, body)` générique ; `setIdleTimeout` (#5quater, #17bis, #17quater).
 5. `MediaService` (upload + `m.image`/`m.file`) — dépend de 4.
 
@@ -154,7 +155,6 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 
 ## Points de vigilance transverses
 
-- **429 et `isClientError()`** : aujourd'hui `RateLimitException` n'est pas une `MatrixServerException`, donc `PasswordTokenProvider` traite un 429 comme erreur transitoire (pas de reconnexion). **Quand `RateLimitException` sera rattachée à `MatrixServerException` (5ter), `isClientError()` renverra vrai pour un 429** et le fournisseur le prendrait pour un refus définitif (« login refused »). À corriger dans la même modification : exclure le statut 429 de `isClientError()`, avec un test.
 - **Mode `token` : un token refusé met le client en `FAILED`** (liveness DOWN) au lieu de réessayer indéfiniment. Comportement voulu, mais changement par rapport à avant.
 - **Mode `password`, stockage `memory`** : nouvelle connexion à chaque démarrage, donc un appareil de plus sur le compte (si le serveur n'en réutilise pas) sauf si `logout-on-shutdown` (activé par défaut avec `store=memory`) ferme la session à l'arrêt. Un arrêt brutal (kill, crash) ne se déconnecte pas : la session reste jusqu'à son expiration ; utiliser `file` pour la reprendre.
 - **`initial-limit` par défaut à 20** (extension) : au premier sync d'un démarrage sans token de reprise, les 20 derniers messages de chaque salon sont rejoués et le bot y répond à nouveau. Pour un bot qui répond, préférer `initial-limit=0` et/ou `sync.store=file`.
@@ -171,7 +171,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 
 1. ~~`MessageService` : réponses, HTML, `m.emote`, éditions, réactions~~ — fait. Reste : `/redact` (supprimer un message, retirer une réaction).
 2. ~~`logout()` à l'arrêt de l'extension en mode `password`~~ — fait.
-3. Aligner la hiérarchie d'exceptions sur le contrat `HttpTransport` (`RateLimitException`, `MatrixTransportException`) **et** exclure le 429 de `MatrixServerException.isClientError()`.
+3. ~~Aligner la hiérarchie d'exceptions sur le contrat `HttpTransport` et exclure le 429 de `isClientError()`~~ — fait.
 4. `HttpTransport#delete(String, String)` + `send(method, path, headers, body)`.
 5. Headers custom + `Content-Type` paramétrable.
 6. `setIdleTimeout` + timeout par requête.

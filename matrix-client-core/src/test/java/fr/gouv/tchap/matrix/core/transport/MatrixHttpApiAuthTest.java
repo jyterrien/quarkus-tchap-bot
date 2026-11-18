@@ -191,4 +191,19 @@ class MatrixHttpApiAuthTest {
 		assertInstanceOf(AuthenticationException.class, ex.getCause());
 		verify(transport, times(1)).get(WHOAMI, "fixed");
 	}
+
+	@Test
+	void rateLimit_doesNotTriggerARenewal() {
+		HttpTransport transport = rejectingTheFirstToken(
+				new fr.gouv.tchap.matrix.exception.RateLimitException("HTTP 429", 1_000));
+		CountingProvider provider = new CountingProvider();
+		MatrixHttpApi api = new MatrixHttpApi(transport, provider);
+
+		CompletionException ex = assertThrows(CompletionException.class,
+				() -> api.whoami().toCompletableFuture().join());
+
+		assertInstanceOf(fr.gouv.tchap.matrix.exception.RateLimitException.class, ex.getCause());
+		assertEquals(0, provider.renewals.get(), "un 429 n'est pas un refus du token");
+		verify(transport, times(1)).get(any(), any());
+	}
 }

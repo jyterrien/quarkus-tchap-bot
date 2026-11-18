@@ -149,3 +149,33 @@ identifiants (`CredentialStore.clear()` : mémoire vidée, fichier supprimé) et
 renouveler un token. `TchapLifecycle` l'appelle à l'arrêt de Quarkus, après l'arrêt de la synchronisation et avant la
 fermeture du transport, quand `quarkus.tchap.auth.logout-on-shutdown` le demande (voir `docs/configuration.md`), y
 compris quand la synchronisation est désactivée.
+
+## Erreurs
+
+Toutes les erreurs du SDK sont des `MatrixException` : un seul `catch (MatrixException)` les attrape toutes, le 429
+compris.
+
+```
+MatrixException
+├── AuthenticationException     identifiants refusés ou impossibles à renouveler : inutile de réessayer
+├── MatrixTransportException    la requête n'a pas abouti (réseau, connexion coupée, transport fermé)
+└── MatrixServerException       le serveur a répondu par une erreur HTTP (statut, errcode, soft_logout)
+    └── RateLimitException      429 : réessayer après retryAfterMillis()
+```
+
+Pour décider s'il faut réessayer :
+
+| Erreur | Réessayer ? |
+|---|---|
+| `MatrixTransportException` | oui, le serveur n'a rien répondu |
+| `MatrixServerException` 5xx (`isServerError()`) | oui, en général transitoire |
+| `RateLimitException` (`isRateLimited()`) | oui, après `retryAfterMillis()` |
+| `MatrixServerException` 4xx hors 429 (`isClientError()`) | non, refus définitif |
+| `AuthenticationException` | non |
+
+`isClientError()` exclut volontairement le 429 : sinon le renouvellement du token prendrait un 429 pour un refus
+définitif des identifiants (« login refused ») et se reconnecterait à tort. Une erreur `MatrixServerException` garde son
+message « HTTP statut: corps » ; `isTokenRejected()` repère un token refusé (401 ou `M_UNKNOWN_TOKEN`).
+
+`MatrixTransportException` et `RateLimitException` sont définies dans `matrix-client-api` (même paquet qu'avant,
+`fr.gouv.tchap.matrix.exception`) : les imports existants restent valides.

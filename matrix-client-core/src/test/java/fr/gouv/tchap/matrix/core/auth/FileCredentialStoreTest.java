@@ -120,6 +120,7 @@ class FileCredentialStoreTest {
 	@Test
 	void clear_deletesTheFile_andTheTemporaryFile() throws Exception {
 		Path file = dir.resolve("c.json");
+		@SuppressWarnings("resource")
 		FileCredentialStore store = new FileCredentialStore(file);
 		store.save(SAMPLE).toCompletableFuture().join();
 		Files.writeString(dir.resolve("c.json.tmp"), "reste d'une écriture interrompue");
@@ -131,6 +132,7 @@ class FileCredentialStoreTest {
 		assertTrue(store.load().toCompletableFuture().join().isEmpty());
 	}
 
+	@SuppressWarnings("resource")
 	@Test
 	void clear_ofAMissingFile_isNotAnError() {
 		assertDoesNotThrow(
@@ -139,6 +141,7 @@ class FileCredentialStoreTest {
 
 	@Test
 	void afterClear_aNewSaveWorks() {
+		@SuppressWarnings("resource")
 		FileCredentialStore store = new FileCredentialStore(dir.resolve("c.json"));
 		store.save(SAMPLE).toCompletableFuture().join();
 		store.clear().toCompletableFuture().join();

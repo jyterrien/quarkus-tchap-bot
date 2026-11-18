@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import fr.gouv.tchap.matrix.exception.MatrixException;
 import fr.gouv.tchap.matrix.exception.MatrixServerException;
+import fr.gouv.tchap.matrix.exception.MatrixTransportException;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -261,11 +262,28 @@ class VertxHttpTransportTest {
 	}
 
 	@Test
-	void connectionRefused_mapsToMatrixException() {
+	void connectionRefused_mapsToATransportException() {
 		// Port 1 : personne n'écoute, la connexion est refusée immédiatement.
 		Throwable cause = failureOf(transport("http://127.0.0.1:1").get("/x", "tok"));
 
+		assertInstanceOf(MatrixTransportException.class, cause);
 		assertInstanceOf(MatrixException.class, cause);
+		assertFalse(cause instanceof MatrixServerException, "le serveur n'a rien répondu");
+	}
+
+	@Test
+	void status429_isAServerExceptionAndAMatrixException() {
+		String url = startServer(req -> req.response().setStatusCode(429).putHeader("Retry-After", "3").end("{}"));
+
+		Throwable cause = failureOf(transport(url).get("/x", "tok"));
+
+		RateLimitException rle = assertInstanceOf(RateLimitException.class, cause);
+		assertInstanceOf(MatrixServerException.class, rle);
+		assertInstanceOf(MatrixException.class, rle);
+		assertEquals(429, rle.statusCode());
+		assertTrue(rle.isRateLimited());
+		assertFalse(rle.isClientError());
+		assertFalse(rle.isTokenRejected());
 	}
 
 	@Test
@@ -356,13 +374,13 @@ class VertxHttpTransportTest {
 	}
 
 	@Test
-	void requestsAfterClose_failWithMatrixException() {
+	void requestsAfterClose_failWithATransportException() {
 		VertxHttpTransport t = new VertxHttpTransport(vertx, "http://127.0.0.1:1");
 		t.close();
 
 		Throwable cause = failureOf(t.get("/x", "tok"));
 
-		assertInstanceOf(MatrixException.class, cause);
+		assertInstanceOf(MatrixTransportException.class, cause);
 		assertTrue(cause.getMessage().contains("closed"));
 	}
 

@@ -71,6 +71,7 @@ class PasswordTokenProviderLogoutTest {
 	@Test
 	void logout_postsToTheLogoutEndpoint_withTheCurrentToken_andClearsTheStore() {
 		TrackingStore store = new TrackingStore();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1")).on(LOGOUT_PATH, "{}");
 		PasswordTokenProvider provider = loggedIn(transport, store);
 		assertTrue(store.load().toCompletableFuture().join().isPresent());
@@ -86,6 +87,7 @@ class PasswordTokenProviderLogoutTest {
 
 	@Test
 	void afterALogout_noTokenIsProvided_andNoNewSessionIsOpened() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1")).on(LOGOUT_PATH, "{}");
 		PasswordTokenProvider provider = loggedIn(transport, new TrackingStore());
 		provider.logout().toCompletableFuture().join();
@@ -98,6 +100,7 @@ class PasswordTokenProviderLogoutTest {
 	@Test
 	void logout_twice_sendsASingleRequest() {
 		TrackingStore store = new TrackingStore();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1")).on(LOGOUT_PATH, "{}");
 		PasswordTokenProvider provider = loggedIn(transport, store);
 
@@ -122,6 +125,7 @@ class PasswordTokenProviderLogoutTest {
 	@Test
 	void logout_withAnExpiredAccessToken_refreshesFirst_thenClosesTheSession() {
 		TrackingStore store = new TrackingStore();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1"))
 				.on(REFRESH_PATH, refreshResponse("at2", "rt2")).on(LOGOUT_PATH, unauthorized(), "{}");
 		PasswordTokenProvider provider = loggedIn(transport, store);
@@ -139,6 +143,7 @@ class PasswordTokenProviderLogoutTest {
 	@Test
 	void logout_whenTheSessionIsAlreadyGone_isTreatedAsDone_withoutReconnecting() {
 		TrackingStore store = new TrackingStore();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1"))
 				.on(REFRESH_PATH, unauthorized()).on(LOGOUT_PATH, unauthorized());
 		PasswordTokenProvider provider = loggedIn(transport, store);
@@ -153,6 +158,7 @@ class PasswordTokenProviderLogoutTest {
 	@Test
 	void logout_withARejectedTokenAndNoRefreshToken_isTreatedAsDone() {
 		TrackingStore store = new TrackingStore();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport()
 				.on(LOGIN_PATH, "{\"access_token\":\"at1\",\"device_id\":\"DEV1\",\"user_id\":\"@bot-user:srv\"}")
 				.on(LOGOUT_PATH, unauthorized());
@@ -168,6 +174,7 @@ class PasswordTokenProviderLogoutTest {
 	@Test
 	void logout_failingTransiently_fails_andKeepsTheSessionUsable() {
 		TrackingStore store = new TrackingStore();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1")).on(LOGOUT_PATH,
 				new MatrixException("Vert.x transport error: Connection was closed"));
 		PasswordTokenProvider provider = loggedIn(transport, store);
@@ -182,6 +189,7 @@ class PasswordTokenProviderLogoutTest {
 	@Test
 	void logout_withAServerError_fails_andKeepsTheCredentials() {
 		TrackingStore store = new TrackingStore();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1")).on(LOGOUT_PATH,
 				new MatrixServerException("HTTP 503: {}", 503, null, false));
 		PasswordTokenProvider provider = loggedIn(transport, store);
@@ -194,6 +202,7 @@ class PasswordTokenProviderLogoutTest {
 	void logout_succeeds_evenIfTheStoreCannotBeCleared() {
 		TrackingStore store = new TrackingStore();
 		store.failToClear = true;
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1")).on(LOGOUT_PATH, "{}");
 		PasswordTokenProvider provider = loggedIn(transport, store);
 
@@ -207,6 +216,7 @@ class PasswordTokenProviderLogoutTest {
 	void logout_waitsForARenewalInProgress_thenUsesTheNewToken() {
 		TrackingStore store = new TrackingStore();
 		CompletableFuture<String> pendingRefresh = new CompletableFuture<>();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGIN_PATH, loginResponse("at1", "rt1"))
 				.on(REFRESH_PATH, pendingRefresh).on(LOGOUT_PATH, "{}");
 		PasswordTokenProvider provider = loggedIn(transport, store);
@@ -225,6 +235,7 @@ class PasswordTokenProviderLogoutTest {
 
 	@Test
 	void logout_ofAStaticToken_doesNothing() {
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport();
 
 		new StaticTokenProvider("fixed").logout().toCompletableFuture().join();
@@ -237,6 +248,7 @@ class PasswordTokenProviderLogoutTest {
 		TrackingStore store = new TrackingStore();
 		store.save(new Credentials(LOGIN_ID, "@bot-user:srv", "DEV1", "stored-at", "stored-rt",
 				new TestClock().instant().plusSeconds(3 * 3600))).toCompletableFuture().join();
+		@SuppressWarnings("resource")
 		FakeTransport transport = new FakeTransport().on(LOGOUT_PATH, "{}");
 		PasswordTokenProvider provider = provider(transport, store);
 		provider.accessToken().toCompletableFuture().join(); // charge les identifiants mémorisés
