@@ -149,6 +149,17 @@ final class FakeHomeserver implements AutoCloseable {
 		return this;
 	}
 
+	/**
+	 * Les envois de messages ({@code PUT .../send/...}) répondent avec
+	 * {@code delayMs} millisecondes de retard : simule un homeserver qui ne répond
+	 * pas.
+	 */
+	FakeHomeserver slowSends(int delayMs) {
+		server.stubFor(put(urlPathMatching(PREFIX + "rooms/.*/send/.*"))
+				.willReturn(okJson("{\"event_id\":\"$late\"}").withFixedDelay(delayMs)));
+		return this;
+	}
+
 	/** {@code POST /logout} réussit. */
 	FakeHomeserver logout() {
 		server.stubFor(post(urlPathEqualTo(PREFIX + "logout")).willReturn(okJson("{}")));

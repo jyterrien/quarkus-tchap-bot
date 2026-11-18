@@ -14,6 +14,7 @@ import fr.gouv.tchap.matrix.core.sync.InMemorySyncTokenStore;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
 import fr.gouv.tchap.matrix.sync.SyncTokenStore;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
+import fr.gouv.tchap.matrix.transport.http.HttpTransportOptions;
 import fr.gouv.tchap.matrix.transport.http.VertxHttpTransport;
 import fr.gouv.tchap.quarkus.config.TchapConfig;
 import fr.gouv.tchap.quarkus.events.TchapEventPublisher;
@@ -26,6 +27,7 @@ import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.jboss.logging.Logger;
@@ -68,7 +70,38 @@ public class TchapClientProducer {
 	@Produces
 	@Singleton
 	public HttpTransport httpTransport(TchapConfig config, Vertx vertx) {
-		return new VertxHttpTransport(vertx, config.homeserverUrl().toString());
+		// Sans synchronisation, pas de long polling : le délai configuré s'applique tel
+		// quel
+		Duration requestTimeout = config.sync().enabled()
+				? effectiveRequestTimeout(config.http().requestTimeout(), config.sync().timeout())
+				: config.http().requestTimeout();
+		if (requestTimeout.compareTo(config.http().requestTimeout()) > 0) {
+			LOG.infof(
+					"quarkus.tchap.http.request-timeout raised to %s: it must exceed quarkus.tchap.sync.timeout (%d ms) "
+							+ "plus a margin, the /sync long poll keeps the request open",
+					requestTimeout, config.sync().timeout());
+		}
+		return new VertxHttpTransport(vertx, config.homeserverUrl().toString(),
+				new HttpTransportOptions(config.http().connectTimeout(), requestTimeout));
+	}
+
+	/**
+	 * Marge ajoutée à la durée du long polling pour obtenir le délai de requête
+	 * minimal.
+	 */
+	static final Duration SYNC_MARGIN = Duration.ofSeconds(30);
+
+	/**
+	 * Délai de requête à appliquer : celui configuré, relevé s'il ne laisse pas la
+	 * place au long polling de /sync (durée du long polling + marge). Un délai nul
+	 * (désactivé) reste nul.
+	 */
+	static Duration effectiveRequestTimeout(Duration configured, long syncTimeoutMs) {
+		if (configured.isZero()) {
+			return configured;
+		}
+		Duration needed = Duration.ofMillis(syncTimeoutMs).plus(SYNC_MARGIN);
+		return configured.compareTo(needed) >= 0 ? configured : needed;
 	}
 
 	void disposeTransport(@Disposes HttpTransport transport) {

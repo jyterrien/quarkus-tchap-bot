@@ -179,3 +179,27 @@ message « HTTP statut: corps » ; `isTokenRejected()` repère un token refusé 
 
 `MatrixTransportException` et `RateLimitException` sont définies dans `matrix-client-api` (même paquet qu'avant,
 `fr.gouv.tchap.matrix.exception`) : les imports existants restent valides.
+
+## Transport HTTP
+
+`HttpTransport` offre `get`, `put`, `post` (JSON, inchangés), `delete`, et une requête générique
+`send(TransportRequest)` dont tout le reste découle dans `VertxHttpTransport` :
+
+```java
+transport.delete("/_matrix/client/v3/directory/room/%23alias%3Asrv", token);
+
+transport.send(TransportRequest.of("POST", "/_matrix/media/v3/upload?filename=a.png", token)
+        .withHeader("X-Request-ID", "req-42")
+        .withBody("image/png", bytes)           // corps binaire, Content-Type voulu
+        .withTimeout(Duration.ofMinutes(2)));   // à la place du délai du transport
+```
+
+- `TransportRequest` est immuable. `Authorization` et `Content-Type` ne se fixent que par `accessToken` et
+  `contentType` (les passer en en-têtes est refusé) ; un token nul ou vide n'envoie pas d'`Authorization`. Son
+  `toString()` n'affiche ni le token ni le corps.
+- `delete` et `send` sont des méthodes `default` de `HttpTransport` : un transport qui ne fournit que `get`/`put`/
+  `post` reste valide, `send` échoue alors avec `UnsupportedOperationException`.
+- **Délais** (`HttpTransportOptions`) : connexion 30 s, requête 60 s par défaut, et un délai propre à une requête. Le
+  délai de requête compte le temps **sans donnée reçue** ; il doit donc dépasser la durée du long polling de `/sync`.
+  L'extension Quarkus le relève automatiquement (voir `docs/configuration.md`). Hors Quarkus, le régler avec
+  `TransportFactory.vertx(url, options)` ou le constructeur de `VertxHttpTransport`.

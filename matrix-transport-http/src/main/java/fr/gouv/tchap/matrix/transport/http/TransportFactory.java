@@ -30,4 +30,14 @@ public final class TransportFactory {
 	public static HttpTransport vertx(Vertx vertx, String homeserverUrl) {
 		return new VertxHttpTransport(vertx, homeserverUrl);
 	}
+
+	/** Comme {@link #vertx(String)}, avec des délais choisis. */
+	public static HttpTransport vertx(String homeserverUrl, HttpTransportOptions options) {
+		return new VertxHttpTransport(homeserverUrl, options);
+	}
+
+	/** Comme {@link #vertx(Vertx, String)}, avec des délais choisis. */
+	public static HttpTransport vertx(Vertx vertx, String homeserverUrl, HttpTransportOptions options) {
+		return new VertxHttpTransport(vertx, homeserverUrl, options);
+	}
 }

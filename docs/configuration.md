@@ -93,3 +93,21 @@ avertissement, la session expirera d'elle-même. Un token expiré est d'abord re
 nouvelle connexion ; si le serveur ne reconnaît plus la session, elle est considérée comme fermée. Après un logout,
 plus aucune requête tardive ne peut rouvrir une session. En développement (`quarkus:dev`), chaque rechargement
 arrête puis redémarre l'application, donc se déconnecte et se reconnecte quand `store=memory`.
+
+## Délais HTTP
+
+| Propriété | Défaut | Description |
+|---|---|---|
+| `quarkus.tchap.http.connect-timeout` | `30S` | Délai maximal pour se connecter au homeserver. |
+| `quarkus.tchap.http.request-timeout` | `60S` | Délai maximal d'une requête sans qu'aucune donnée n'arrive du serveur. `0S` le désactive. |
+
+Une requête qui ne reçoit aucune réponse échoue au bout de `request-timeout` avec une `MatrixTransportException`
+(« request timed out after ... ms ») au lieu de bloquer indéfiniment : l'envoi d'un message échoue, la synchronisation
+réessaie.
+
+Quand la synchronisation est active, `request-timeout` est **relevé automatiquement** à `quarkus.tchap.sync.timeout`
++ 30 s si besoin (un message INFO l'indique au démarrage) : le long polling de `/sync` garde la requête ouverte
+pendant toute la durée de `sync.timeout`. Avec la synchronisation désactivée, la valeur configurée s'applique telle
+quelle.
+
+Il n'y a volontairement **pas** de délai d'inactivité de connexion, qui couperait aussi le long polling.

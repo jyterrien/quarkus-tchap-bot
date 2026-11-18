@@ -50,6 +50,11 @@ public interface TchapConfig {
 	AuthConfig auth();
 
 	/**
+	 * Délais des requêtes HTTP vers le homeserver.
+	 */
+	HttpConfig http();
+
+	/**
 	 * Configuration de la synchronisation Matrix.
 	 */
 	SyncConfig sync();
@@ -83,6 +88,28 @@ public interface TchapConfig {
 		 */
 		@WithDefault("true")
 		boolean required();
+	}
+
+	interface HttpConfig {
+
+		/**
+		 * Délai maximal d'établissement de la connexion au homeserver.
+		 */
+		@WithName("connect-timeout")
+		@WithDefault("30S")
+		Duration connectTimeout();
+
+		/**
+		 * Délai maximal d'une requête sans qu'aucune donnée n'arrive du serveur. Une
+		 * requête qui ne répond pas échoue au bout de ce délai (au lieu de bloquer
+		 * indéfiniment) ; l'envoi d'un message échoue alors, et la synchronisation
+		 * réessaie. Quand la synchronisation est active, il est relevé automatiquement
+		 * à {@code quarkus.tchap.sync.timeout} + 30 s si besoin : le long polling de
+		 * {@code /sync} maintient la requête ouverte tout ce temps.
+		 */
+		@WithName("request-timeout")
+		@WithDefault("60S")
+		Duration requestTimeout();
 	}
 
 	interface AuthConfig {

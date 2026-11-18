@@ -6,10 +6,12 @@ import fr.gouv.tchap.matrix.exception.MatrixTransportException;
 import fr.gouv.tchap.matrix.exception.MatrixServerException;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
+import fr.gouv.tchap.matrix.transport.TransportRequest;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.HttpResponse;
@@ -19,6 +21,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
@@ -42,20 +45,33 @@ public class VertxHttpTransport implements HttpTransport {
 	private final boolean ownsVertx;
 	private final WebClient client;
 	private final String homeserverUrl;
+	private final HttpTransportOptions options;
 	private final AtomicBoolean closed = new AtomicBoolean(false);
 
 	/**
 	 * Crée et possède son propre Vertx : appeler {@link #close()} pour l'arrêter.
 	 */
 	public VertxHttpTransport(String homeserverUrl) {
+		this(homeserverUrl, HttpTransportOptions.defaults());
+	}
+
+	/** Comme {@link #VertxHttpTransport(String)}, avec des délais choisis. */
+	public VertxHttpTransport(String homeserverUrl, HttpTransportOptions options) {
 		// normalize() est évalué avant Vertx.vertx() : une URL invalide ne laisse aucun
 		// Vertx orphelin
-		this(normalize(homeserverUrl), Vertx.vertx(), true);
+		this(normalize(homeserverUrl), Vertx.vertx(), true, options);
 	}
 
 	/** Utilise un Vertx fourni, qui reste sous la responsabilité de l'appelant. */
 	public VertxHttpTransport(Vertx vertx, String homeserverUrl) {
-		this(normalize(homeserverUrl), Objects.requireNonNull(vertx, "vertx is required"), false);
+		this(vertx, homeserverUrl, HttpTransportOptions.defaults());
+	}
+
+	/**
+	 * Comme {@link #VertxHttpTransport(Vertx, String)}, avec des délais choisis.
+	 */
+	public VertxHttpTransport(Vertx vertx, String homeserverUrl, HttpTransportOptions options) {
+		this(normalize(homeserverUrl), Objects.requireNonNull(vertx, "vertx is required"), false, options);
 	}
 
 	/**
@@ -63,10 +79,16 @@ public class VertxHttpTransport implements HttpTransport {
 	 * final.
 	 */
 	VertxHttpTransport(String normalizedUrl, Vertx vertx, boolean ownsVertx) {
+		this(normalizedUrl, vertx, ownsVertx, HttpTransportOptions.defaults());
+	}
+
+	private VertxHttpTransport(String normalizedUrl, Vertx vertx, boolean ownsVertx, HttpTransportOptions options) {
 		this.homeserverUrl = normalizedUrl;
 		this.vertx = vertx;
 		this.ownsVertx = ownsVertx;
-		this.client = WebClient.create(vertx, new WebClientOptions().setConnectTimeout(30_000).setKeepAlive(true));
+		this.options = Objects.requireNonNull(options, "options is required");
+		this.client = WebClient.create(vertx,
+				new WebClientOptions().setConnectTimeout((int) options.connectTimeout().toMillis()).setKeepAlive(true));
 	}
 
 	private static String normalize(String homeserverUrl) {
@@ -78,19 +100,42 @@ public class VertxHttpTransport implements HttpTransport {
 
 	@Override
 	public CompletionStage<String> get(String path, String accessToken) {
-		return call(() -> withAuth(client.getAbs(homeserverUrl + path), accessToken).send());
+		return send(TransportRequest.of("GET", path, accessToken));
 	}
 
 	@Override
 	public CompletionStage<String> put(String path, String accessToken, String jsonBody) {
-		return call(() -> withAuth(client.putAbs(homeserverUrl + path), accessToken)
-				.putHeader("Content-Type", "application/json").sendBuffer(body(jsonBody)));
+		return send(TransportRequest.of("PUT", path, accessToken).withJsonBody(jsonBody));
 	}
 
 	@Override
 	public CompletionStage<String> post(String path, String accessToken, String jsonBody) {
-		return call(() -> withAuth(client.postAbs(homeserverUrl + path), accessToken)
-				.putHeader("Content-Type", "application/json").sendBuffer(body(jsonBody)));
+		return send(TransportRequest.of("POST", path, accessToken).withJsonBody(jsonBody));
+	}
+
+	/**
+	 * Point d'entrée commun de toutes les requêtes : méthode, en-têtes, corps
+	 * binaire, jeton facultatif et délai (celui de la requête, sinon celui des
+	 * options).
+	 */
+	@Override
+	public CompletionStage<String> send(TransportRequest request) {
+		Objects.requireNonNull(request, "request is required");
+		long timeoutMs = request.timeout() != null ? request.timeout().toMillis() : options.requestTimeout().toMillis();
+		return call(request, timeoutMs, () -> {
+			HttpRequest<Buffer> http = client.requestAbs(HttpMethod.valueOf(request.method()),
+					homeserverUrl + request.path());
+			withAuth(http, request.accessToken());
+			request.headers().forEach(http::putHeader);
+			if (timeoutMs > 0) {
+				http.timeout(timeoutMs);
+			}
+			byte[] body = request.body();
+			if (body == null) {
+				return http.send();
+			}
+			return http.putHeader("Content-Type", request.contentType()).sendBuffer(Buffer.buffer(body));
+		});
 	}
 
 	/**
@@ -151,15 +196,12 @@ public class VertxHttpTransport implements HttpTransport {
 		return new MatrixServerException("HTTP " + code + ": " + resp.bodyAsString(), code, errcode, softLogout);
 	}
 
-	private static Buffer body(String jsonBody) {
-		return Buffer.buffer(jsonBody == null ? "" : jsonBody);
-	}
-
-	private CompletionStage<String> call(Supplier<Future<HttpResponse<Buffer>>> action) {
+	private CompletionStage<String> call(TransportRequest request, long timeoutMs,
+			Supplier<Future<HttpResponse<Buffer>>> action) {
 		if (closed.get())
 			return failed(new MatrixTransportException("Transport is closed"));
 		try {
-			return handle(action.get());
+			return handle(action.get(), request, timeoutMs);
 		} catch (RuntimeException e) {
 			// Fermeture concurrente : Vert.x peut lever l'exception de façon synchrone
 			return failed(new MatrixTransportException("Vert.x transport error: " + e.getMessage(), e));
@@ -172,12 +214,17 @@ public class VertxHttpTransport implements HttpTransport {
 		return f;
 	}
 
-	private CompletionStage<String> handle(Future<HttpResponse<Buffer>> future) {
+	private CompletionStage<String> handle(Future<HttpResponse<Buffer>> future, TransportRequest request,
+			long timeoutMs) {
 		CompletableFuture<String> result = new CompletableFuture<>();
 		future.onComplete(ar -> {
 			if (ar.failed()) {
-				result.completeExceptionally(
-						new MatrixTransportException("Vert.x transport error: " + ar.cause().getMessage(), ar.cause()));
+				Throwable cause = ar.cause();
+				String reason = cause instanceof TimeoutException
+						? "request timed out after " + timeoutMs + " ms (" + request.method() + " " + request.path()
+								+ ")"
+						: cause.getMessage();
+				result.completeExceptionally(new MatrixTransportException("Vert.x transport error: " + reason, cause));
 				return;
 			}
 			HttpResponse<Buffer> resp = ar.result();

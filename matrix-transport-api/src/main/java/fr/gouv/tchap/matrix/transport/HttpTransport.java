@@ -25,6 +25,25 @@ public interface HttpTransport extends AutoCloseable {
 	CompletionStage<String> post(String path, String accessToken, String jsonBody);
 
 	/** Libère les ressources du transport. Idempotent. Sans exception vérifiée. */
+	/**
+	 * {@code DELETE}. Équivalent de {@link #send} avec une requête {@code DELETE}
+	 * sans corps.
+	 */
+	default CompletionStage<String> delete(String path, String accessToken) {
+		return send(TransportRequest.of("DELETE", path, accessToken));
+	}
+
+	/**
+	 * Requête quelconque : méthode, en-têtes supplémentaires, corps binaire et
+	 * délai propre. Même contrat d'erreur que les autres méthodes. Par défaut non
+	 * pris en charge (échec {@link UnsupportedOperationException}) : un transport
+	 * qui ne la fournit pas reste utilisable pour tout le reste.
+	 */
+	default CompletionStage<String> send(TransportRequest request) {
+		return java.util.concurrent.CompletableFuture.failedFuture(
+				new UnsupportedOperationException("Generic requests are not supported by " + getClass().getName()));
+	}
+
 	@Override
 	default void close() {
 	}
