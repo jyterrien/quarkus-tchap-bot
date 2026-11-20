@@ -16,9 +16,21 @@ import java.time.Instant;
  *            identifiant du message auquel celui-ci répond précisément, ou
  *            {@code null} si ce n'est pas une réponse. La réponse de repli que
  *            les clients ajoutent dans un thread n'en est pas une.
+ * @param media
+ *            média joint (image, fichier, audio, vidéo), ou {@code null} pour
+ *            un message sans média ou dont le média est chiffré. {@code body}
+ *            est alors la légende ou le nom du fichier.
  */
 public record TchapMessage(String eventId, String roomId, String sender, String body, Instant timestamp,
-		boolean encrypted, String messageType, String threadRootId, String replyToEventId) {
+		boolean encrypted, String messageType, String threadRootId, String replyToEventId, TchapMedia media) {
+
+	/**
+	 * Message sans média (signature antérieure à la prise en charge des médias).
+	 */
+	public TchapMessage(String eventId, String roomId, String sender, String body, Instant timestamp, boolean encrypted,
+			String messageType, String threadRootId, String replyToEventId) {
+		this(eventId, roomId, sender, body, timestamp, encrypted, messageType, threadRootId, replyToEventId, null);
+	}
 
 	/**
 	 * Message hors thread et sans réponse (conserve la signature antérieure à la
@@ -26,7 +38,7 @@ public record TchapMessage(String eventId, String roomId, String sender, String 
 	 */
 	public TchapMessage(String eventId, String roomId, String sender, String body, Instant timestamp, boolean encrypted,
 			String messageType) {
-		this(eventId, roomId, sender, body, timestamp, encrypted, messageType, null, null);
+		this(eventId, roomId, sender, body, timestamp, encrypted, messageType, null, null, null);
 	}
 
 	/**
@@ -35,7 +47,12 @@ public record TchapMessage(String eventId, String roomId, String sender, String 
 	 */
 	public TchapMessage(String eventId, String roomId, String sender, String body, Instant timestamp, boolean encrypted,
 			String messageType, String threadRootId) {
-		this(eventId, roomId, sender, body, timestamp, encrypted, messageType, threadRootId, null);
+		this(eventId, roomId, sender, body, timestamp, encrypted, messageType, threadRootId, null, null);
+	}
+
+	/** Vrai si le message porte un média lisible (image, fichier, audio, vidéo). */
+	public boolean hasMedia() {
+		return media != null;
 	}
 
 	/** Vrai si le message répond précisément à un autre message. */

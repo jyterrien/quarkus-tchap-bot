@@ -105,6 +105,19 @@ public final class TchapRoom {
 		return r == null ? unavailable() : r.react(eventId, key);
 	}
 
+	/**
+	 * Téléverse un fichier puis l'envoie dans ce salon : image, audio, vidéo ou
+	 * fichier selon {@code contentType}. {@code caption} est le texte affiché avec
+	 * le média ; {@code null} pour le nom du fichier. Pour renseigner dimensions ou
+	 * durée, téléverser avec {@code TchapClient.upload} et envoyer le message
+	 * construit à la main.
+	 */
+	public CompletionStage<MessageReceipt> sendMedia(byte[] content, String contentType, String filename,
+			String caption) {
+		MatrixRoom r = room;
+		return r == null ? unavailable() : r.sendMedia(content, contentType, filename, caption);
+	}
+
 	void bind(MatrixRoom matrixRoom) {
 		this.room = matrixRoom;
 	}

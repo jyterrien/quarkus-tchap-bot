@@ -233,4 +233,62 @@ class VertxHttpTransportRequestTest {
 
 		assertInstanceOf(MatrixTransportException.class, failureOf(t.send(TransportRequest.of("DELETE", "/x", "tok"))));
 	}
+
+	// ---- réponse binaire (execute)
+	// ----------------------------------------------------------
+
+	@Test
+	void execute_returnsTheBinaryBodyAndTheResponseHeaders() {
+		byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0, 1, 2, (byte) 255, (byte) 128};
+		String url = startServer(req -> req.response().setStatusCode(200).putHeader("Content-Type", "image/png")
+				.putHeader("Content-Disposition", "attachment; filename=\"chart.png\"")
+				.end(io.vertx.core.buffer.Buffer.buffer(png)));
+
+		fr.gouv.tchap.matrix.transport.TransportResponse response = transport(url, HttpTransportOptions.defaults())
+				.execute(TransportRequest.of("GET", "/_matrix/client/v1/media/download/srv/abc", "tok"))
+				.toCompletableFuture().join();
+
+		assertEquals(200, response.statusCode());
+		assertArrayEquals(png, response.body(), "les octets doivent arriver sans altération");
+		assertEquals("image/png", response.header("content-type"));
+		assertEquals("attachment; filename=\"chart.png\"", response.header("Content-Disposition"));
+	}
+
+	@Test
+	void execute_onAnErrorStatus_failsLikeSend() {
+		String url = startServer(
+				req -> req.response().setStatusCode(404).end("{\"errcode\":\"M_NOT_FOUND\",\"error\":\"Not found\"}"));
+
+		Throwable failure = assertThrows(CompletionException.class,
+				() -> transport(url, HttpTransportOptions.defaults()).execute(TransportRequest.of("GET", "/x", "tok"))
+						.toCompletableFuture().join())
+				.getCause();
+
+		fr.gouv.tchap.matrix.exception.MatrixServerException server = assertInstanceOf(
+				fr.gouv.tchap.matrix.exception.MatrixServerException.class, failure);
+		assertEquals(404, server.statusCode());
+		assertEquals("M_NOT_FOUND", server.errcode());
+	}
+
+	@Test
+	void send_stillReadsTheBodyAsText() {
+		String url = startServer(req -> req.response().end("{\"content_uri\":\"mxc://srv/abc\"}"));
+
+		String body = transport(url, HttpTransportOptions.defaults()).send(
+				TransportRequest.of("POST", "/_matrix/media/v3/upload", "tok").withBody("image/png", new byte[]{1}))
+				.toCompletableFuture().join();
+
+		assertEquals("{\"content_uri\":\"mxc://srv/abc\"}", body);
+	}
+
+	@Test
+	void execute_onAnEmptyBody_returnsAnEmptyArray() {
+		String url = startServer(req -> req.response().setStatusCode(204).end());
+
+		fr.gouv.tchap.matrix.transport.TransportResponse response = transport(url, HttpTransportOptions.defaults())
+				.execute(TransportRequest.of("DELETE", "/x", "tok")).toCompletableFuture().join();
+
+		assertEquals(204, response.statusCode());
+		assertEquals(0, response.body().length);
+	}
 }

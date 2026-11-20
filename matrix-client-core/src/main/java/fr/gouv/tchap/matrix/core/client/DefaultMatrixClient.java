@@ -11,6 +11,7 @@ import fr.gouv.tchap.matrix.client.ClientStatus;
 import fr.gouv.tchap.matrix.client.MatrixClient;
 import fr.gouv.tchap.matrix.core.auth.DefaultSession;
 import fr.gouv.tchap.matrix.core.auth.StaticTokenProvider;
+import fr.gouv.tchap.matrix.core.media.DefaultMediaService;
 import fr.gouv.tchap.matrix.core.message.DefaultMessageService;
 import fr.gouv.tchap.matrix.core.message.UuidTransactionIdGenerator;
 import fr.gouv.tchap.matrix.core.room.DefaultMatrixRoom;
@@ -19,6 +20,7 @@ import fr.gouv.tchap.matrix.core.sync.SyncEngine;
 import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
 import fr.gouv.tchap.matrix.exception.MatrixException;
+import fr.gouv.tchap.matrix.media.MediaService;
 import fr.gouv.tchap.matrix.message.MessageService;
 import fr.gouv.tchap.matrix.room.MatrixRoom;
 import fr.gouv.tchap.matrix.room.RoomService;
@@ -39,6 +41,7 @@ public class DefaultMatrixClient implements MatrixClient {
 	private final MatrixHttpApi api;
 	private final AtomicReference<Session> session;
 	private final MessageService messageService;
+	private final MediaService mediaService;
 	private final RoomService roomService;
 	private final SyncEngine syncEngine;
 	private final AtomicReference<ClientStatus> status = new AtomicReference<>(ClientStatus.NEW);
@@ -71,6 +74,7 @@ public class DefaultMatrixClient implements MatrixClient {
 		RoomService rooms = new DefaultRoomService(api);
 		this.session = new AtomicReference<>(initialSession);
 		this.messageService = new DefaultMessageService(api, new UuidTransactionIdGenerator());
+		this.mediaService = new DefaultMediaService(api);
 		this.roomService = rooms;
 
 		Consumer<String> inviteHandler = options.autoJoinInvites() ? roomId -> autoJoin(rooms, roomId) : null;
@@ -92,7 +96,7 @@ public class DefaultMatrixClient implements MatrixClient {
 
 	@Override
 	public MatrixRoom room(String roomId) {
-		return new DefaultMatrixRoom(roomId, messageService);
+		return new DefaultMatrixRoom(roomId, messageService, mediaService);
 	}
 
 	@Override
@@ -136,6 +140,11 @@ public class DefaultMatrixClient implements MatrixClient {
 	public CompletionStage<Void> stop() {
 		status.set(ClientStatus.STOPPING);
 		return syncEngine.stop().thenRun(() -> status.set(ClientStatus.STOPPED));
+	}
+
+	@Override
+	public MediaService media() {
+		return mediaService;
 	}
 
 	@Override

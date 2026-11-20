@@ -160,6 +160,28 @@ final class FakeHomeserver implements AutoCloseable {
 		return this;
 	}
 
+	/** {@code POST /_matrix/media/v3/upload} réussit et rend cette adresse. */
+	FakeHomeserver upload(String contentUri) {
+		server.stubFor(post(urlPathEqualTo("/_matrix/media/v3/upload"))
+				.willReturn(okJson("{\"content_uri\":\"" + contentUri + "\"}")));
+		return this;
+	}
+
+	/**
+	 * Le média {@code serverName/mediaId} se télécharge par l'accès authentifié.
+	 */
+	FakeHomeserver media(String serverName, String mediaId, byte[] content, String contentType, String disposition) {
+		server.stubFor(get(urlPathEqualTo("/_matrix/client/v1/media/download/" + serverName + "/" + mediaId))
+				.willReturn(aResponse().withStatus(200).withHeader("Content-Type", contentType)
+						.withHeader("Content-Disposition", disposition).withBody(content)));
+		return this;
+	}
+
+	/** Requêtes de téléversement reçues ({@code POST /_matrix/media/v3/upload}). */
+	List<LoggedRequest> uploads() {
+		return received(postRequestedFor(urlPathEqualTo("/_matrix/media/v3/upload")));
+	}
+
 	/** {@code POST /logout} réussit. */
 	FakeHomeserver logout() {
 		server.stubFor(post(urlPathEqualTo(PREFIX + "logout")).willReturn(okJson("{}")));
@@ -266,6 +288,16 @@ final class FakeHomeserver implements AutoCloseable {
 		return "{\"event_id\":\"" + eventId + "\",\"sender\":\"@alice:s\",\"type\":\"m.room.message\","
 				+ "\"origin_server_ts\":1,\"content\":{\"msgtype\":\"m.text\",\"body\":\"" + body + "\"" + relation
 				+ "}}";
+	}
+
+	/**
+	 * Message média ({@code m.image}, {@code m.file}...) avec l'adresse mxc:// du
+	 * média.
+	 */
+	static String mediaEvent(String eventId, String msgtype, String body, String url, String mimeType, long size) {
+		return "{\"event_id\":\"" + eventId + "\",\"sender\":\"@alice:s\",\"type\":\"m.room.message\","
+				+ "\"origin_server_ts\":1,\"content\":{\"msgtype\":\"" + msgtype + "\",\"body\":\"" + body
+				+ "\",\"url\":\"" + url + "\",\"info\":{\"mimetype\":\"" + mimeType + "\",\"size\":" + size + "}}}";
 	}
 
 	/**

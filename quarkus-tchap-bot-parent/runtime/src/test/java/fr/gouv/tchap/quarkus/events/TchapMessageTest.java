@@ -65,4 +65,23 @@ class TchapMessageTest {
 		assertEquals("$msg", message(null, null).replyThreadId());
 		assertEquals("$root", message("$root", null).replyThreadId());
 	}
+
+	@Test
+	void olderConstructors_stillWork_withoutMedia() {
+		TchapMessage nine = new TchapMessage("$e", "!r:s", "@u:s", "hi", TS, false, "m.text", "$root", "$q");
+
+		assertNull(nine.media());
+		assertFalse(nine.hasMedia());
+		assertEquals("$q", nine.replyToEventId());
+	}
+
+	@Test
+	void hasMedia_followsTheMediaField() {
+		TchapMedia media = new TchapMedia("mxc://srv/abc", "image/png", 10L, "a.png");
+		TchapMessage withMedia = new TchapMessage("$e", "!r:s", "@u:s", "a.png", TS, false, "m.image", null, null,
+				media);
+
+		assertTrue(withMedia.hasMedia());
+		assertEquals("mxc://srv/abc", withMedia.media().uri().toString());
+	}
 }

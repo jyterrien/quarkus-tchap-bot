@@ -3,7 +3,9 @@ package fr.gouv.tchap.quarkus.events;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fr.gouv.tchap.matrix.event.MatrixEvent;
+import fr.gouv.tchap.matrix.media.MxcUri;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.jboss.logging.Logger;
 
@@ -30,6 +32,8 @@ public class TchapMessageMapper {
 	/** ObjectMapper est thread-safe : une seule instance pour tous les messages. */
 	private static final ObjectMapper MAPPER = new ObjectMapper();
 
+	private static final Set<String> MEDIA_TYPES = Set.of("m.image", "m.file", "m.audio", "m.video");
+
 	private final boolean ignoreSelf;
 	private final Supplier<String> botUserId;
 
@@ -51,6 +55,31 @@ public class TchapMessageMapper {
 		return ignoreSelf && self != null && self.equals(ev.sender());
 	}
 
+	/**
+	 * Média d'un message {@code m.image}, {@code m.file}, {@code m.audio} ou
+	 * {@code m.video} : {@code url} (adresse mxc://) et {@code info}. Null pour un
+	 * autre type, quand l'adresse manque ou est invalide, et pour un média chiffré
+	 * (champ {@code file} au lieu de {@code url}).
+	 */
+	private static TchapMedia mediaOf(String msgtype, JsonNode content) {
+		if (!MEDIA_TYPES.contains(msgtype)) {
+			return null;
+		}
+		JsonNode url = content.path("url");
+		if (!url.isTextual() || !MxcUri.isValid(url.asText())) {
+			return null;
+		}
+		JsonNode info = content.path("info");
+		String mimeType = info.path("mimetype").isTextual() ? info.path("mimetype").asText() : null;
+		Long size = info.path("size").canConvertToLong() && info.path("size").asLong() >= 0
+				? info.path("size").asLong()
+				: null;
+		String filename = content.path("filename").isTextual() && !content.path("filename").asText().isBlank()
+				? content.path("filename").asText()
+				: null;
+		return new TchapMedia(url.asText(), mimeType, size, filename);
+	}
+
 	public Optional<TchapMessage> map(MatrixEvent ev) {
 		LOG.debugf("Matrix event: type=%s room=%s sender=%s", ev.type(), ev.roomId(), ev.sender());
 
@@ -65,7 +94,7 @@ public class TchapMessageMapper {
 			String body = content.path("body").asText("");
 			String msgtype = content.path("msgtype").asText("m.text");
 			return Optional.of(new TchapMessage(ev.eventId(), ev.roomId(), ev.sender(), body, ev.timestamp(), false,
-					msgtype, ev.threadRootId(), ev.replyToEventId()));
+					msgtype, ev.threadRootId(), ev.replyToEventId(), mediaOf(msgtype, content)));
 		} catch (Exception e) {
 			LOG.warnf("Cannot parse m.room.message content for event %s: %s", ev.eventId(), e.getMessage());
 			return Optional.empty();

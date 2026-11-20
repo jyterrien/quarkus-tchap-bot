@@ -53,4 +53,16 @@ public interface MatrixRoom {
 	 * {@link fr.gouv.tchap.matrix.message.MessageService#react}.
 	 */
 	CompletionStage<MessageReceipt> react(String eventId, String key);
+
+	/**
+	 * Téléverse un fichier puis l'envoie dans ce salon : image, audio, vidéo ou
+	 * fichier selon {@code contentType}. Voir
+	 * {@link fr.gouv.tchap.matrix.media.MediaService#prepareMessage}. Pour
+	 * renseigner dimensions ou durée, téléverser avec le service de médias et
+	 * envoyer le message construit à la main.
+	 *
+	 * @param caption
+	 *            texte affiché avec le média, {@code null} pour le nom du fichier
+	 */
+	CompletionStage<MessageReceipt> sendMedia(byte[] content, String contentType, String filename, String caption);
 }

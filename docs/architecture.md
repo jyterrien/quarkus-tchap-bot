@@ -203,3 +203,45 @@ transport.send(TransportRequest.of("POST", "/_matrix/media/v3/upload?filename=a.
   délai de requête compte le temps **sans donnée reçue** ; il doit donc dépasser la durée du long polling de `/sync`.
   L'extension Quarkus le relève automatiquement (voir `docs/configuration.md`). Hors Quarkus, le régler avec
   `TransportFactory.vertx(url, options)` ou le constructeur de `VertxHttpTransport`.
+
+## Médias
+
+`MatrixClient.media()` (`MediaService`) téléverse et télécharge ; `TchapClient` et `TchapRoom` ajoutent l'envoi d'un
+fichier dans un salon :
+
+```java
+// Envoyer : téléverse puis poste un message m.image / m.audio / m.video / m.file selon le type MIME
+room.sendMedia(bytes, "image/png", "graphique.png", "Résultat du jour");   // légende facultative
+
+// Recevoir et télécharger
+void onMessage(@Observes TchapMessage message) {
+    if (message.hasMedia()) {
+        tchap.download(message.media()).thenAccept(content -> {
+            // content.content(), content.contentType(), content.filename()
+        });
+    }
+}
+```
+
+- **Légende** : `body` du message est la légende ; sans légende, le nom du fichier. Le nom d'origine est envoyé à part
+  (`filename`, Matrix 1.10). Les dimensions (`w`, `h`) et la durée ne sont pas connues du SDK : pour les renseigner,
+  téléverser avec `upload` puis envoyer un message construit à la main :
+
+```java
+MxcUri uri = tchap.upload(bytes, "image/png", "graphique.png").toCompletableFuture().join();
+room.send(OutgoingMessage.image("Résultat", MediaAttachment.of(uri, "image/png", bytes.length).withDimensions(800, 600)));
+```
+
+- **Téléchargement** : par l'accès authentifié (`/_matrix/client/v1/media/download`, Matrix 1.11), avec repli sur
+  l'ancien (`/_matrix/media/v3/download`) si le serveur répond `M_UNRECOGNIZED`. Un média absent (`M_NOT_FOUND`) n'est
+  pas retenté. Le contenu est lu **en entier en mémoire** : prévu pour des images et documents de taille raisonnable.
+  La taille annoncée par l'expéditeur (`TchapMedia.size()`) n'est qu'une indication, à ne pas croire pour dimensionner
+  un tampon ; il n'y a pas encore de limite de taille ni de streaming.
+- **Sécurité** : `MxcUri` n'accepte que `mxc://serveur/identifiant` avec des caractères sûrs (pas de `/`, de `..`, de
+  paramètres) : les deux parties finissent dans le chemin d'une requête. Le `filename` annoncé par un expéditeur ou par
+  `Content-Disposition` est réduit à un nom simple (`../../etc/passwd` donne `passwd`) mais vient d'un tiers : à
+  contrôler avant d'écrire sur un disque.
+- **Médias chiffrés** : un média d'un salon chiffré (champ `file` au lieu de `url`) n'est pas exposé
+  (`TchapMessage.media()` est nul, le message l'est quand même) ; il n'est pas lisible tant que le chiffrement de bout
+  en bout n'est pas pris en charge.
+- **Édition** : un message média ne peut pas être édité (`IllegalArgumentException`).

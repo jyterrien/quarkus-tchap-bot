@@ -7,6 +7,7 @@ import fr.gouv.tchap.matrix.exception.MatrixServerException;
 import fr.gouv.tchap.matrix.exception.RateLimitException;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
 import fr.gouv.tchap.matrix.transport.TransportRequest;
+import fr.gouv.tchap.matrix.transport.TransportResponse;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -17,6 +18,8 @@ import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -116,10 +119,11 @@ public class VertxHttpTransport implements HttpTransport {
 	/**
 	 * Point d'entrée commun de toutes les requêtes : méthode, en-têtes, corps
 	 * binaire, jeton facultatif et délai (celui de la requête, sinon celui des
-	 * options).
+	 * options). {@code send}, {@code get}, {@code put}, {@code post} et
+	 * {@code delete} en découlent.
 	 */
 	@Override
-	public CompletionStage<String> send(TransportRequest request) {
+	public CompletionStage<TransportResponse> execute(TransportRequest request) {
 		Objects.requireNonNull(request, "request is required");
 		long timeoutMs = request.timeout() != null ? request.timeout().toMillis() : options.requestTimeout().toMillis();
 		return call(request, timeoutMs, () -> {
@@ -196,7 +200,7 @@ public class VertxHttpTransport implements HttpTransport {
 		return new MatrixServerException("HTTP " + code + ": " + resp.bodyAsString(), code, errcode, softLogout);
 	}
 
-	private CompletionStage<String> call(TransportRequest request, long timeoutMs,
+	private CompletionStage<TransportResponse> call(TransportRequest request, long timeoutMs,
 			Supplier<Future<HttpResponse<Buffer>>> action) {
 		if (closed.get())
 			return failed(new MatrixTransportException("Transport is closed"));
@@ -208,15 +212,15 @@ public class VertxHttpTransport implements HttpTransport {
 		}
 	}
 
-	private static CompletionStage<String> failed(Throwable t) {
-		CompletableFuture<String> f = new CompletableFuture<>();
+	private static <T> CompletionStage<T> failed(Throwable t) {
+		CompletableFuture<T> f = new CompletableFuture<>();
 		f.completeExceptionally(t);
 		return f;
 	}
 
-	private CompletionStage<String> handle(Future<HttpResponse<Buffer>> future, TransportRequest request,
+	private CompletionStage<TransportResponse> handle(Future<HttpResponse<Buffer>> future, TransportRequest request,
 			long timeoutMs) {
-		CompletableFuture<String> result = new CompletableFuture<>();
+		CompletableFuture<TransportResponse> result = new CompletableFuture<>();
 		future.onComplete(ar -> {
 			if (ar.failed()) {
 				Throwable cause = ar.cause();
@@ -235,7 +239,10 @@ public class VertxHttpTransport implements HttpTransport {
 			} else if (code >= 400) {
 				result.completeExceptionally(serverError(code, resp));
 			} else {
-				result.complete(resp.bodyAsString());
+				Map<String, String> headers = new LinkedHashMap<>();
+				resp.headers().forEach(entry -> headers.putIfAbsent(entry.getKey(), entry.getValue()));
+				Buffer body = resp.body();
+				result.complete(new TransportResponse(code, headers, body == null ? new byte[0] : body.getBytes()));
 			}
 		});
 		return result;

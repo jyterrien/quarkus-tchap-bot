@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import fr.gouv.tchap.matrix.core.transport.MatrixHttpApi;
 import fr.gouv.tchap.matrix.exception.MatrixException;
 import fr.gouv.tchap.matrix.message.MessageReceipt;
+import fr.gouv.tchap.matrix.message.MediaAttachment;
 import fr.gouv.tchap.matrix.message.MessageService;
 import fr.gouv.tchap.matrix.message.OutgoingMessage;
 import fr.gouv.tchap.matrix.message.TransactionIdGenerator;
@@ -59,6 +60,9 @@ public class DefaultMessageService implements MessageService {
 		if (newContent.replyToEventId() != null || newContent.threadRootId() != null) {
 			throw new IllegalArgumentException("An edit cannot change the reply or thread relation of a message");
 		}
+		if (newContent.type().isMedia()) {
+			throw new IllegalArgumentException("Editing a media message is not supported");
+		}
 		String txnId = txnGenerator.next();
 		return api.sendMessage(roomId, txnId, toEditContent(eventId, newContent).toString())
 				.thenApply(response -> new MessageReceipt(extractEventId(response)));
@@ -88,14 +92,51 @@ public class DefaultMessageService implements MessageService {
 		return content;
 	}
 
-	/** msgtype, body, et format + formatted_body s'il y a une version HTML. */
+	/**
+	 * msgtype, body, format + formatted_body s'il y a une version HTML, puis, pour
+	 * un message média, url, filename et info.
+	 */
 	private static ObjectNode baseContent(OutgoingMessage message) {
 		ObjectNode content = MAPPER.createObjectNode().put("msgtype", message.type().msgtype()).put("body",
 				message.body());
 		if (message.formattedBody() != null) {
 			content.put("format", "org.matrix.custom.html").put("formatted_body", message.formattedBody());
 		}
+		if (message.media() != null) {
+			addMedia(content, message.media());
+		}
 		return content;
+	}
+
+	/**
+	 * Contenu d'un média : {@code url}, {@code filename} (Matrix 1.10, permet à
+	 * {@code body} d'être une légende) et {@code info} (mimetype, size, w, h,
+	 * duration), chaque champ seulement s'il est connu.
+	 */
+	private static void addMedia(ObjectNode content, MediaAttachment media) {
+		content.put("url", media.url());
+		if (media.filename() != null) {
+			content.put("filename", media.filename());
+		}
+		ObjectNode info = MAPPER.createObjectNode();
+		if (media.mimeType() != null) {
+			info.put("mimetype", media.mimeType());
+		}
+		if (media.size() != null) {
+			info.put("size", media.size());
+		}
+		if (media.width() != null) {
+			info.put("w", media.width());
+		}
+		if (media.height() != null) {
+			info.put("h", media.height());
+		}
+		if (media.durationMs() != null) {
+			info.put("duration", media.durationMs());
+		}
+		if (!info.isEmpty()) {
+			content.set("info", info);
+		}
 	}
 
 	/**

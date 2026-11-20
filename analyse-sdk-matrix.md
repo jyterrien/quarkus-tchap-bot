@@ -48,7 +48,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 3. ❌ **Pas de retry transport** : un 502/503 transitoire remonte tel quel ; `SyncEngine` retente à 5 s, mais `MessageService` échoue immédiatement (correct pour l'idempotence via txnId, mais un retry opt-in manque).
 4. ✅ **`DELETE`** : `HttpTransport.delete(path, token)` (alias de `send`). Sert aux alias de salon, étiquettes, règles de notification, sauvegarde de clés. _(Attention : `/redact`, `/leave`, `/forget`, `/kick` ne sont pas des `DELETE` : `/redact` est un `PUT`, les autres des `POST`, déjà possibles.)_
 5. ✅ **`PATCH`** pris en charge par `send` (peu utilisé par l'API client Matrix).
-6. ⚠️ **Upload binaire** : le transport sait envoyer un corps binaire avec le `Content-Type` voulu (`TransportRequest.withBody`). Reste le service d'upload lui-même (`/media/v3/upload`, `mxc://`), voir le point 5 de la roadmap. La réponse reste lue comme texte, ce qui suffit pour l'upload (JSON) mais pas pour télécharger un média.
+6. ✅ **Upload et réponses binaires** : `TransportRequest.withBody` envoie un corps binaire avec le `Content-Type` voulu, et `HttpTransport.execute` rend la réponse complète (`TransportResponse` : statut, en-têtes, octets), ce qui permet de télécharger un média. `send` en découle (corps lu comme texte).
 7. ✅ **Headers extensibles** : `send(TransportRequest)` accepte des en-têtes supplémentaires (`User-Agent`, `X-Request-ID`...) et un `Content-Type` quelconque. `Authorization` et `Content-Type` ne se fixent que par `accessToken` et `contentType` (refusés dans les en-têtes).
 8. ✅ **`Authorization: Bearer` toujours envoyé** : résolu. Token `null` ou vide → pas d'en-tête (`/login`, `/refresh`, et à l'avenir `/versions`, `/.well-known`).
 9. ❌ **`close()` non bloquant sur thread Vert.x** : fermeture « fire-and-forget » sans signal. Acceptable, à documenter.
@@ -63,7 +63,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 | # | Manque | Statut | Détail |
 |---|--------|--------|--------|
 | 1 | **Login / logout / refresh** | ✅ | `/login` (mot de passe), `/refresh` et `/logout` ; renouvellement à l'avance et sur 401 ; repli sur nouveau login ; identifiants persistés et oubliés au logout (`CredentialStore.clear`). La session est fermée à l'arrêt selon `quarkus.tchap.auth.logout-on-shutdown` (voir 29). |
-| 2 | **Messages enrichis** : `m.emote`, `m.image`, `m.file`, `m.audio`, `m.video`, `m.location` + upload média | ⚠️ | ✅ `m.emote` (`OutgoingMessage.emote`). ❌ Images, fichiers, audio, vidéo, position : l'upload média manque, et le transport ne permet pas l'upload binaire. |
+| 2 | **Messages enrichis** : `m.emote`, `m.image`, `m.file`, `m.audio`, `m.video`, `m.location` + upload média | ✅ | `m.emote`, images, fichiers, audio et vidéo : téléversement (`MediaService.upload`), envoi (`OutgoingMessage.image/file/audio/video`, `room.sendMedia`), réception (`TchapMessage.media()`) et téléchargement (`download`). Reste : `m.location`, miniatures, et les médias chiffrés (dépend de l'E2EE, point 8). |
 | 3 | **Réponses / threads / relations** : `m.in_reply_to`, `m.thread`, `m.replace`, `m.reaction` | ✅ | `m.thread` et `m.in_reply_to` (`OutgoingMessage.inReplyTo` / `inThread`, `TchapMessage.reply`), éditions (`edit`) et réactions (`react`), en émission et en réception, jusqu'à l'extension Quarkus (`TchapMessageEdited`, `TchapReaction`). Une édition reçue n'est plus publiée comme un nouveau message. Reste : **retirer une réaction** et supprimer un message (`PUT /redact`, faisable avec le transport actuel). |
 | 4 | **Formatage** : `format: org.matrix.custom.html`, `formatted_body` | ✅ | `OutgoingMessage.withHtml` + `escapeHtml`. Pas de conversion markdown → HTML ni de filtrage des balises : à la charge de l'appelant. |
 | 5bis | **Erreurs Matrix typées** | ✅ | `MatrixServerException(statut, errcode, soft_logout)` ; `SyncEngine` arrête la boucle sur identifiants refusés ; client en `FAILED` (sondes DOWN). |
@@ -120,6 +120,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 - ✅ Threads en émission et en réception, côté SDK et côté extension (#3 partiel, #26 partiel)
 - ✅ Messages enrichis : réponse à un message précis (`m.in_reply_to`), HTML (`formatted_body`), `m.emote`, réponse dans un thread ; `OutgoingMessage` et `send(...)` (#3, #4, #2 partiel)
 - ✅ Éditions (`m.replace`) et réactions (`m.reaction`) en émission et en réception ; une édition reçue n'est plus republiée comme un nouveau message (#3)
+- ✅ Médias : téléversement, téléchargement (accès authentifié puis ancien accès), messages image/fichier/audio/vidéo, `room.sendMedia`, média des messages reçus (`TchapMessage.media()`), `MxcUri` validé, nom de fichier réduit à un nom simple (#2, #5)
 - ✅ Transport : `delete()`, `send(TransportRequest)` générique (en-têtes, corps binaire, délai propre), timeouts de connexion et de requête configurables (#5quater, #17bis, #17quater)
 - ✅ Hiérarchie d'exceptions unifiée sous `MatrixException` ; `RateLimitException` sous `MatrixServerException`, 429 exclu de `isClientError()` (#5ter)
 - ✅ Logout à l'arrêt (`POST /logout`), avec `logout-on-shutdown` et oubli des identifiants ; arrêt propre de la sync et des magasins (#1, #29)
@@ -131,7 +132,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 2. ~~**Logout à l'arrêt** (#1, #29)~~ — ✅ fait.
 3. ~~**Refonte des exceptions**~~ — ✅ fait (#5ter), avec la distinction 429 / refus définitif préservée.
 4. ~~**`HttpTransport.delete()`** + `send(...)` générique, timeouts~~ — ✅ fait (#5quater, #17bis, #17quater).
-5. `MediaService` (upload + `m.image`/`m.file`) — dépend de 4.
+5. ~~`MediaService` (upload, téléchargement, `m.image`/`m.file`/`m.audio`/`m.video`)~~ — ✅ fait. Reste : streaming et limite de taille des gros fichiers, `m.location`, miniatures, médias chiffrés.
 
 ### Sprint 2 (bot robuste)
 

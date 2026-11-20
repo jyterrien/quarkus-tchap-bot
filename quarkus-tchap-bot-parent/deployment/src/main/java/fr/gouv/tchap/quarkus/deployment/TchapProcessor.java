@@ -30,8 +30,8 @@ public class TchapProcessor {
 		reflective.produce(ReflectiveClassBuildItem.builder("fr.gouv.tchap.matrix.core.sync.SyncEventParser",
 				"fr.gouv.tchap.matrix.transport.http.VertxHttpTransport", "fr.gouv.tchap.quarkus.TchapClient",
 				"fr.gouv.tchap.quarkus.events.TchapMessage", "fr.gouv.tchap.quarkus.events.TchapMessageEdited",
-				"fr.gouv.tchap.quarkus.events.TchapReaction", "fr.gouv.tchap.quarkus.events.TchapEventPublisher")
-				.methods(true).fields(true).build());
+				"fr.gouv.tchap.quarkus.events.TchapReaction", "fr.gouv.tchap.quarkus.events.TchapMedia",
+				"fr.gouv.tchap.quarkus.events.TchapEventPublisher").methods(true).fields(true).build());
 	}
 
 	@BuildStep

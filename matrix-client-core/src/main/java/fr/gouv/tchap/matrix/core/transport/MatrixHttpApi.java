@@ -7,6 +7,8 @@ import fr.gouv.tchap.matrix.auth.TokenProvider;
 import fr.gouv.tchap.matrix.core.auth.StaticTokenProvider;
 import fr.gouv.tchap.matrix.exception.MatrixServerException;
 import fr.gouv.tchap.matrix.transport.HttpTransport;
+import fr.gouv.tchap.matrix.transport.TransportRequest;
+import fr.gouv.tchap.matrix.transport.TransportResponse;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
@@ -47,13 +49,35 @@ public class MatrixHttpApi {
 	 * Exécute {@code call} avec le token courant ; sur refus du token, renouvelle
 	 * puis rejoue une fois.
 	 */
-	private CompletionStage<String> authed(Function<String, CompletionStage<String>> call) {
+	private <T> CompletionStage<T> authed(Function<String, CompletionStage<T>> call) {
 		return tokens.accessToken().thenCompose(token -> call.apply(token).exceptionallyCompose(ex -> {
 			if (!isTokenRejected(ex)) {
-				return CompletableFuture.<String>failedFuture(ex);
+				return CompletableFuture.<T>failedFuture(ex);
 			}
 			return tokens.renew(token).thenCompose(call);
 		}));
+	}
+
+	/**
+	 * Téléverse un média : {@code POST /_matrix/media/v3/upload}, corps binaire
+	 * avec son {@code Content-Type}. Rend le JSON de la réponse
+	 * ({@code content_uri}).
+	 */
+	public CompletionStage<String> uploadMedia(byte[] content, String contentType, String filename) {
+		String path = "/_matrix/media/v3/upload"
+				+ (filename == null || filename.isBlank() ? "" : "?filename=" + encode(filename));
+		return authed(token -> transport.send(TransportRequest.of("POST", path, token).withBody(contentType, content)));
+	}
+
+	/**
+	 * Télécharge un média. {@code authenticated} choisit l'accès authentifié
+	 * ({@code /_matrix/client/v1/media/download}, Matrix 1.11) plutôt que l'ancien
+	 * ({@code /_matrix/media/v3/download}).
+	 */
+	public CompletionStage<TransportResponse> downloadMedia(String serverName, String mediaId, boolean authenticated) {
+		String path = (authenticated ? "/_matrix/client/v1/media/download/" : "/_matrix/media/v3/download/")
+				+ encode(serverName) + "/" + encode(mediaId);
+		return authed(token -> transport.execute(TransportRequest.of("GET", path, token)));
 	}
 
 	private static boolean isTokenRejected(Throwable ex) {

@@ -1,8 +1,11 @@
 package fr.gouv.tchap.quarkus;
 
 import fr.gouv.tchap.matrix.client.MatrixClient;
+import fr.gouv.tchap.matrix.media.MediaContent;
+import fr.gouv.tchap.matrix.media.MxcUri;
 import fr.gouv.tchap.matrix.message.MessageReceipt;
 import fr.gouv.tchap.matrix.message.OutgoingMessage;
+import fr.gouv.tchap.quarkus.events.TchapMedia;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.util.concurrent.CompletionStage;
@@ -40,6 +43,37 @@ public class TchapClient {
 	 */
 	public CompletionStage<MessageReceipt> send(String roomId, OutgoingMessage message) {
 		return matrixClient.messages().send(roomId, message);
+	}
+
+	/**
+	 * Téléverse un fichier et rend son adresse {@code mxc://}. Voir
+	 * {@link fr.gouv.tchap.matrix.media.MediaService#upload}.
+	 */
+	public CompletionStage<MxcUri> upload(byte[] content, String contentType, String filename) {
+		return matrixClient.media().upload(content, contentType, filename);
+	}
+
+	/**
+	 * Télécharge le média d'un message reçu. Le média est lu en entier en mémoire.
+	 */
+	public CompletionStage<MediaContent> download(TchapMedia media) {
+		return matrixClient.media().download(media.uri());
+	}
+
+	/** Télécharge un média par son adresse {@code mxc://}. */
+	public CompletionStage<MediaContent> download(MxcUri uri) {
+		return matrixClient.media().download(uri);
+	}
+
+	/**
+	 * Téléverse un fichier puis l'envoie dans le salon : image, audio, vidéo ou
+	 * fichier selon {@code contentType}. {@code caption} est le texte affiché avec
+	 * le média ; {@code null} pour le nom du fichier.
+	 */
+	public CompletionStage<MessageReceipt> sendMedia(String roomId, byte[] content, String contentType, String filename,
+			String caption) {
+		return matrixClient.media().prepareMessage(content, contentType, filename, caption)
+				.thenCompose(message -> matrixClient.messages().send(roomId, message));
 	}
 
 	/**

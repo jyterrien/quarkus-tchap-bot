@@ -280,4 +280,103 @@ class TchapMessageMapperTest {
 		assertTrue(new TchapMessageMapper(true, BOT)
 				.mapReaction(event("m.room.message", "@alice:s", "{\"body\":\"x\"}")).isEmpty());
 	}
+
+	// ---- médias
+	// ------------------------------------------------------------------------------
+
+	private static MatrixEvent mediaEvent(String content) {
+		return new MatrixEvent("$media", "!room:s", "@alice:s", "m.room.message", content, TS);
+	}
+
+	@Test
+	void anImageMessage_carriesItsMedia() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		TchapMessage m = mapper.map(mediaEvent("{\"msgtype\":\"m.image\",\"body\":\"graphique.png\","
+				+ "\"url\":\"mxc://srv/abc\",\"filename\":\"chart.png\","
+				+ "\"info\":{\"mimetype\":\"image/png\",\"size\":18432,\"w\":800,\"h\":600}}")).orElseThrow();
+
+		assertTrue(m.hasMedia());
+		assertEquals("m.image", m.messageType());
+		assertEquals("graphique.png", m.body());
+		assertEquals("mxc://srv/abc", m.media().url());
+		assertEquals("image/png", m.media().mimeType());
+		assertEquals(18_432L, m.media().size());
+		assertEquals("chart.png", m.media().filename());
+		assertEquals("srv", m.media().uri().serverName());
+	}
+
+	@Test
+	void everyMediaType_isRecognised() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		for (String type : new String[]{"m.image", "m.file", "m.audio", "m.video"}) {
+			TchapMessage m = mapper
+					.map(mediaEvent("{\"msgtype\":\"" + type + "\",\"body\":\"x\",\"url\":\"mxc://srv/abc\"}"))
+					.orElseThrow();
+
+			assertTrue(m.hasMedia(), type);
+		}
+	}
+
+	@Test
+	void aMediaWithoutInfo_isStillUsable() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		TchapMessage m = mapper
+				.map(mediaEvent("{\"msgtype\":\"m.file\",\"body\":\"notes.pdf\"," + "\"url\":\"mxc://srv/abc\"}"))
+				.orElseThrow();
+
+		assertNull(m.media().mimeType());
+		assertNull(m.media().size());
+		assertNull(m.media().filename());
+	}
+
+	@Test
+	void anEncryptedMedia_isNotExposed() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		TchapMessage m = mapper.map(mediaEvent("{\"msgtype\":\"m.image\",\"body\":\"photo.png\","
+				+ "\"file\":{\"url\":\"mxc://srv/abc\",\"key\":{},\"iv\":\"x\"}}")).orElseThrow();
+
+		assertFalse(m.hasMedia(), "le média chiffré n'est pas lisible sans E2EE");
+		assertEquals("photo.png", m.body(), "le message lui-même reste publié");
+	}
+
+	@Test
+	void anInvalidMediaUrl_isIgnored_butTheMessageIsStillPublished() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		for (String url : new String[]{"\"http://evil/x\"", "\"mxc://srv/../etc\"", "42", "null", "\"\""}) {
+			TchapMessage m = mapper.map(mediaEvent("{\"msgtype\":\"m.image\",\"body\":\"x\",\"url\":" + url + "}"))
+					.orElseThrow();
+
+			assertFalse(m.hasMedia(), url);
+		}
+	}
+
+	@Test
+	void textMessages_haveNoMedia_evenWithAUrlField() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		TchapMessage m = mapper
+				.map(mediaEvent(
+						"{\"msgtype\":\"m.text\",\"body\":\"voir mxc://srv/abc\"," + "\"url\":\"mxc://srv/abc\"}"))
+				.orElseThrow();
+
+		assertFalse(m.hasMedia());
+	}
+
+	@Test
+	void malformedInfo_isIgnored() {
+		TchapMessageMapper mapper = new TchapMessageMapper(true, BOT);
+
+		TchapMessage m = mapper.map(mediaEvent("{\"msgtype\":\"m.image\",\"body\":\"x\",\"url\":\"mxc://srv/abc\","
+				+ "\"info\":{\"mimetype\":42,\"size\":-5},\"filename\":\" \"}")).orElseThrow();
+
+		assertTrue(m.hasMedia());
+		assertNull(m.media().mimeType());
+		assertNull(m.media().size());
+		assertNull(m.media().filename());
+	}
 }

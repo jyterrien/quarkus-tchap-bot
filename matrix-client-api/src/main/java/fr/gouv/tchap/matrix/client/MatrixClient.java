@@ -32,6 +32,9 @@ public interface MatrixClient {
 
 	MessageService messages();
 
+	/** Médias : téléverser, télécharger, envoyer un fichier dans un salon. */
+	fr.gouv.tchap.matrix.media.MediaService media();
+
 	RoomService rooms();
 
 	Session session();

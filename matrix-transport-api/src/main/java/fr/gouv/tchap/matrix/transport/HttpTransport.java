@@ -24,7 +24,6 @@ public interface HttpTransport extends AutoCloseable {
 
 	CompletionStage<String> post(String path, String accessToken, String jsonBody);
 
-	/** Libère les ressources du transport. Idempotent. Sans exception vérifiée. */
 	/**
 	 * {@code DELETE}. Équivalent de {@link #send} avec une requête {@code DELETE}
 	 * sans corps.
@@ -35,15 +34,30 @@ public interface HttpTransport extends AutoCloseable {
 
 	/**
 	 * Requête quelconque : méthode, en-têtes supplémentaires, corps binaire et
-	 * délai propre. Même contrat d'erreur que les autres méthodes. Par défaut non
-	 * pris en charge (échec {@link UnsupportedOperationException}) : un transport
-	 * qui ne la fournit pas reste utilisable pour tout le reste.
+	 * délai propre. Même contrat d'erreur que les autres méthodes ; le corps de la
+	 * réponse est lu comme du texte UTF-8. Découle de {@link #execute}.
 	 */
 	default CompletionStage<String> send(TransportRequest request) {
+		return execute(request).thenApply(TransportResponse::bodyAsString);
+	}
+
+	/**
+	 * Comme {@link #send}, mais rend la réponse complète : statut, en-têtes et
+	 * corps en octets. C'est la méthode à utiliser quand le corps n'est pas du
+	 * texte (téléchargement d'un média) ou quand un en-tête de réponse compte
+	 * ({@code Content-Type}, {@code Content-Disposition}). Le corps est lu en
+	 * entier en mémoire.
+	 * <p>
+	 * Par défaut non pris en charge (échec {@link UnsupportedOperationException}).
+	 * Un transport n'a à fournir que celle-ci : {@code send} et {@code delete} en
+	 * découlent.
+	 */
+	default CompletionStage<TransportResponse> execute(TransportRequest request) {
 		return java.util.concurrent.CompletableFuture.failedFuture(
 				new UnsupportedOperationException("Generic requests are not supported by " + getClass().getName()));
 	}
 
+	/** Libère les ressources du transport. Idempotent. Sans exception vérifiée. */
 	@Override
 	default void close() {
 	}
