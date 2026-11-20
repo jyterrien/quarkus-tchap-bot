@@ -57,6 +57,7 @@ class TransportResponseTest {
 
 	@Test
 	void aTransportThatOnlyImplementsExecute_getsSendAndDeleteForFree() {
+		@SuppressWarnings("resource")
 		HttpTransport transport = new HttpTransport() {
 			@Override
 			public CompletionStage<String> get(String path, String accessToken) {

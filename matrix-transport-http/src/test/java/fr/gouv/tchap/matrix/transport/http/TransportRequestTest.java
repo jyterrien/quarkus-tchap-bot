@@ -155,6 +155,7 @@ class TransportRequestTest {
 
 	@Test
 	void aTransportWithoutSend_failsCleanly_forGenericRequestsAndDelete() {
+		@SuppressWarnings("resource")
 		MinimalTransport transport = new MinimalTransport();
 
 		CompletionException ex = assertThrows(CompletionException.class,
@@ -167,6 +168,7 @@ class TransportRequestTest {
 	@Test
 	void delete_isASendOfADeleteRequest() {
 		AtomicReference<TransportRequest> seen = new AtomicReference<>();
+		@SuppressWarnings("resource")
 		HttpTransport transport = new MinimalTransport() {
 			@Override
 			public CompletionStage<String> send(TransportRequest request) {
