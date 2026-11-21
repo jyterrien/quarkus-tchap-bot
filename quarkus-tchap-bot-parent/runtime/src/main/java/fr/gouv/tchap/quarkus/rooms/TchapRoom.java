@@ -118,6 +118,20 @@ public final class TchapRoom {
 		return r == null ? unavailable() : r.sendMedia(content, contentType, filename, caption);
 	}
 
+	/**
+	 * Supprime un événement de ce salon : un message, ou une réaction pour la
+	 * retirer (son identifiant est le reçu rendu par {@link #react}). Le bot peut
+	 * supprimer ses propres événements ; ceux des autres demandent le droit de
+	 * modération. Voir {@link fr.gouv.tchap.matrix.message.MessageService#redact}.
+	 *
+	 * @param reason
+	 *            motif visible des membres, {@code null} pour aucun
+	 */
+	public CompletionStage<MessageReceipt> redact(String eventId, String reason) {
+		MatrixRoom r = room;
+		return r == null ? unavailable() : r.redact(eventId, reason);
+	}
+
 	void bind(MatrixRoom matrixRoom) {
 		this.room = matrixRoom;
 	}

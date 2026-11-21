@@ -69,6 +69,11 @@ public final class DefaultMatrixRoom implements MatrixRoom {
 	}
 
 	@Override
+	public CompletionStage<MessageReceipt> redact(String eventId, String reason) {
+		return messages.redact(roomId, eventId, reason);
+	}
+
+	@Override
 	public CompletionStage<MessageReceipt> sendMedia(byte[] content, String contentType, String filename,
 			String caption) {
 		if (media == null) {

@@ -121,8 +121,20 @@ room.react("$leurMessage", "👍");                                    // m.anno
   la réponse ni le thread du message (`IllegalArgumentException`). Seul l'auteur peut éditer son message ; le reçu
   renvoyé est celui de l'événement d'édition, pas du message d'origine.
 - **Réagir** (`react(eventId, clé)`) : la clé est en général un emoji. Réagir deux fois avec la même clé au même
-  message est refusé par le serveur. Retirer une réaction demande de supprimer l'événement de réaction
-  (`/redact`), pas encore pris en charge.
+  message est refusé par le serveur.
+- **Supprimer** (`redact(eventId, motif)`) : supprime un événement (`PUT .../redact/...`), un message comme une
+  réaction. Pour **retirer une réaction**, supprimer son événement : son identifiant est le reçu rendu par `react`.
+  Le contenu est effacé chez tout le monde ; le bot peut supprimer ses propres événements, ceux des autres demandent
+  le droit de modération du salon (sinon `MatrixServerException` 403, `M_FORBIDDEN`). Le motif est facultatif.
+  Le reçu est celui de l'événement de suppression.
+
+```java
+MessageReceipt r = room.react("$leurMessage", "👍").toCompletableFuture().join();
+room.redact(r.eventId(), null);                       // retirer ma réaction
+room.redact("$monMessage", "envoyé par erreur");      // supprimer un message
+```
+
+  La réception d'une suppression (`m.room.redaction`) n'est pas encore publiée comme événement CDI.
 - **Recevoir une édition** : elle n'est **plus** publiée comme un nouveau `TchapMessage` (elle arrivait comme un
   message « * texte » et re-déclenchait le bot). Elle arrive comme un événement CDI `TchapMessageEdited` (message
   remplacé, nouveau texte, nouveau `msgtype`) :

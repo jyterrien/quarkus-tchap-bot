@@ -130,4 +130,16 @@ class DefaultMatrixRoomTest {
 
 		verify(transport).put(eq("/_matrix/client/v3/rooms/%21oncall%3As/send/m.reaction/txn1"), eq("tok"), any());
 	}
+
+	@Test
+	void redact_goesToTheBoundRoom() throws Exception {
+		putReturns("{\"event_id\":\"$redaction\"}");
+
+		room.redact("$orig", "erreur").toCompletableFuture().join();
+
+		ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+		verify(transport).put(eq("/_matrix/client/v3/rooms/%21oncall%3As/redact/%24orig/txn1"), eq("tok"),
+				body.capture());
+		assertEquals("erreur", new ObjectMapper().readTree(body.getValue()).path("reason").asText());
+	}
 }

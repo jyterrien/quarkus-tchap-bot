@@ -64,7 +64,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 |---|--------|--------|--------|
 | 1 | **Login / logout / refresh** | ✅ | `/login` (mot de passe), `/refresh` et `/logout` ; renouvellement à l'avance et sur 401 ; repli sur nouveau login ; identifiants persistés et oubliés au logout (`CredentialStore.clear`). La session est fermée à l'arrêt selon `quarkus.tchap.auth.logout-on-shutdown` (voir 29). |
 | 2 | **Messages enrichis** : `m.emote`, `m.image`, `m.file`, `m.audio`, `m.video`, `m.location` + upload média | ✅ | `m.emote`, images, fichiers, audio et vidéo : téléversement (`MediaService.upload`), envoi (`OutgoingMessage.image/file/audio/video`, `room.sendMedia`), réception (`TchapMessage.media()`) et téléchargement (`download`). Reste : `m.location`, miniatures, et les médias chiffrés (dépend de l'E2EE, point 8). |
-| 3 | **Réponses / threads / relations** : `m.in_reply_to`, `m.thread`, `m.replace`, `m.reaction` | ✅ | `m.thread` et `m.in_reply_to` (`OutgoingMessage.inReplyTo` / `inThread`, `TchapMessage.reply`), éditions (`edit`) et réactions (`react`), en émission et en réception, jusqu'à l'extension Quarkus (`TchapMessageEdited`, `TchapReaction`). Une édition reçue n'est plus publiée comme un nouveau message. Reste : **retirer une réaction** et supprimer un message (`PUT /redact`, faisable avec le transport actuel). |
+| 3 | **Réponses / threads / relations** : `m.in_reply_to`, `m.thread`, `m.replace`, `m.reaction` | ✅ | `m.thread` et `m.in_reply_to` (`OutgoingMessage.inReplyTo` / `inThread`, `TchapMessage.reply`), éditions (`edit`) et réactions (`react`), en émission et en réception, jusqu'à l'extension Quarkus (`TchapMessageEdited`, `TchapReaction`). Une édition reçue n'est plus publiée comme un nouveau message. Suppression d'un message et retrait d'une réaction par `redact` (`PUT /redact`). Reste : publier à la réception les suppressions (`m.room.redaction`) comme événement CDI. |
 | 4 | **Formatage** : `format: org.matrix.custom.html`, `formatted_body` | ✅ | `OutgoingMessage.withHtml` + `escapeHtml`. Pas de conversion markdown → HTML ni de filtrage des balises : à la charge de l'appelant. |
 | 5bis | **Erreurs Matrix typées** | ✅ | `MatrixServerException(statut, errcode, soft_logout)` ; `SyncEngine` arrête la boucle sur identifiants refusés ; client en `FAILED` (sondes DOWN). |
 | 5ter | **Cohérence de la hiérarchie d'exceptions** | ✅ | `MatrixException` racine de tout ; `MatrixTransportException` (réseau) et `RateLimitException extends MatrixServerException` (429) rattachées ; `isClientError()` exclut le 429, `isRateLimited()` et `isServerError()` ajoutés. Les deux classes passent dans `matrix-client-api`, même paquet. |
@@ -120,15 +120,22 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 - ✅ Threads en émission et en réception, côté SDK et côté extension (#3 partiel, #26 partiel)
 - ✅ Messages enrichis : réponse à un message précis (`m.in_reply_to`), HTML (`formatted_body`), `m.emote`, réponse dans un thread ; `OutgoingMessage` et `send(...)` (#3, #4, #2 partiel)
 - ✅ Éditions (`m.replace`) et réactions (`m.reaction`) en émission et en réception ; une édition reçue n'est plus republiée comme un nouveau message (#3)
+- ✅ Suppression d'un message et retrait d'une réaction (`redact`, `PUT /redact`) (#3)
 - ✅ Médias : téléversement, téléchargement (accès authentifié puis ancien accès), messages image/fichier/audio/vidéo, `room.sendMedia`, média des messages reçus (`TchapMessage.media()`), `MxcUri` validé, nom de fichier réduit à un nom simple (#2, #5)
 - ✅ Transport : `delete()`, `send(TransportRequest)` générique (en-têtes, corps binaire, délai propre), timeouts de connexion et de requête configurables (#5quater, #17bis, #17quater)
 - ✅ Hiérarchie d'exceptions unifiée sous `MatrixException` ; `RateLimitException` sous `MatrixServerException`, 429 exclu de `isClientError()` (#5ter)
 - ✅ Logout à l'arrêt (`POST /logout`), avec `logout-on-shutdown` et oubli des identifiants ; arrêt propre de la sync et des magasins (#1, #29)
 - ✅ Sondes de santé readiness / liveness, `SyncHealth` (#24 partiel)
 
-### Sprint 1 (bot utilisable)
+### Sprint 1 (bot utilisable) — ✅ terminé
 
-1. ~~**Messages riches** : `m.in_reply_to`, HTML, `m.emote`, éditions, réactions~~ — ✅ fait via `OutgoingMessage`, `send`, `edit`, `react` (#3, #4). Reste : `MessageService.sendEvent(roomId, type, content)` pour les événements arbitraires (#12), retrait d'une réaction et suppression de message (`/redact`).
+Les cinq points sont livrés. **Reste à valider en réel sur Tchap** (les tests automatisés passent contre un faux homeserver, pas contre le vrai) :
+
+- le logout à l'arrêt (`Logged out` dans le journal, l'appareil du bot disparaît de ses sessions) ;
+- un renouvellement du token (dans la dernière minute avant les 6 h de validité, ou en révoquant la session) ;
+- l'envoi et la réception d'une image dans un salon **non chiffré**, une édition, une réaction et une suppression.
+
+1. ~~**Messages riches** : `m.in_reply_to`, HTML, `m.emote`, éditions, réactions~~ — ✅ fait via `OutgoingMessage`, `send`, `edit`, `react`, `redact` (#3, #4). Reste : `MessageService.sendEvent(roomId, type, content)` pour les événements arbitraires (#12).
 2. ~~**Logout à l'arrêt** (#1, #29)~~ — ✅ fait.
 3. ~~**Refonte des exceptions**~~ — ✅ fait (#5ter), avec la distinction 429 / refus définitif préservée.
 4. ~~**`HttpTransport.delete()`** + `send(...)` générique, timeouts~~ — ✅ fait (#5quater, #17bis, #17quater).
@@ -171,7 +178,7 @@ C'est un socle correct pour un bot **simple** (texte, un seul homeserver, salons
 
 ## Tickets à ouvrir tout de suite
 
-1. ~~`MessageService` : réponses, HTML, `m.emote`, éditions, réactions~~ — fait. Reste : `/redact` (supprimer un message, retirer une réaction).
+1. ~~`MessageService` : réponses, HTML, `m.emote`, éditions, réactions~~ — fait, `redact` compris (supprimer un message, retirer une réaction).
 2. ~~`logout()` à l'arrêt de l'extension en mode `password`~~ — fait.
 3. ~~Aligner la hiérarchie d'exceptions sur le contrat `HttpTransport` et exclure le 429 de `isClientError()`~~ — fait.
 4. ~~`HttpTransport#delete` + `send(...)` générique~~ — fait.

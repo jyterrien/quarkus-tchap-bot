@@ -155,6 +155,12 @@ public class MatrixHttpApi {
 		return authed(token -> transport.put(path, token, jsonBody));
 	}
 
+	/** PUT /rooms/{roomId}/redact/{eventId}/{txnId} */
+	public CompletionStage<String> redactEvent(String roomId, String eventId, String txnId, String jsonBody) {
+		String path = API_PREFIX + "/rooms/" + encode(roomId) + "/redact/" + encode(eventId) + "/" + encode(txnId);
+		return authed(token -> transport.put(path, token, jsonBody));
+	}
+
 	/** POST /rooms/{roomId}/join */
 	public CompletionStage<String> joinRoom(String roomId) {
 		String path = API_PREFIX + "/rooms/" + encode(roomId) + "/join";

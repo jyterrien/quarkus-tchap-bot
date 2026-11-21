@@ -78,11 +78,32 @@ public interface MessageService {
 	 * général un emoji (ex. {@code "👍"}).
 	 * <p>
 	 * Réagir deux fois avec la même clé au même message est refusé par le serveur
-	 * (réaction en double). Retirer une réaction demande de supprimer l'événement
-	 * de réaction, ce que ce service ne fait pas encore.
+	 * (réaction en double). Pour retirer une réaction, supprimer son événement avec
+	 * {@link #redact} : son identifiant est le reçu rendu ici.
 	 *
 	 * @throws IllegalArgumentException
 	 *             si {@code eventId} ou {@code key} est nul ou vide
 	 */
 	CompletionStage<MessageReceipt> react(String roomId, String eventId, String key);
+
+	/**
+	 * Supprime un événement ({@code PUT /rooms/{roomId}/redact/{eventId}/{txnId}})
+	 * : un message, mais aussi une réaction. Pour retirer une réaction, supprimer
+	 * l'événement de réaction, dont l'identifiant est le reçu rendu par
+	 * {@link #react}.
+	 * <p>
+	 * Le contenu de l'événement est effacé chez tout le monde ; il reste dans le
+	 * salon sous forme d'un événement vide. Le bot peut supprimer ses propres
+	 * événements ; supprimer ceux des autres demande le droit de modération du
+	 * salon (sinon {@code MatrixServerException} 403, {@code M_FORBIDDEN}).
+	 *
+	 * @param reason
+	 *            motif, visible des membres du salon ; {@code null} pour aucun
+	 *
+	 * @return reçu de l'événement de suppression (pas de l'événement supprimé)
+	 *
+	 * @throws IllegalArgumentException
+	 *             si {@code eventId} est nul ou vide
+	 */
+	CompletionStage<MessageReceipt> redact(String roomId, String eventId, String reason);
 }

@@ -182,6 +182,31 @@ final class FakeHomeserver implements AutoCloseable {
 		return received(postRequestedFor(urlPathEqualTo("/_matrix/media/v3/upload")));
 	}
 
+	/** {@code PUT .../redact/...} réussit (suppression d'un événement). */
+	FakeHomeserver redactOk() {
+		server.stubFor(put(urlPathMatching(PREFIX + "rooms/.*/redact/.*"))
+				.willReturn(okJson("{\"event_id\":\"$redaction\"}")));
+		return this;
+	}
+
+	/**
+	 * La suppression d'un événement dont l'identifiant contient {@code marker} est
+	 * refusée : 403 {@code M_FORBIDDEN} (pas le droit de modérer). À appeler après
+	 * {@link #redactOk()} : le dernier stub déclaré l'emporte.
+	 */
+	FakeHomeserver redactForbidden(String marker) {
+		server.stubFor(put(urlPathMatching(PREFIX + "rooms/.*/redact/.*" + marker + ".*"))
+				.willReturn(aResponse().withStatus(403).withHeader("Content-Type", "application/json")
+						.withBody("{\"errcode\":\"M_FORBIDDEN\",\"error\":\"You don't have permission to redact\"}")));
+		return this;
+	}
+
+	/** Chemin décodé et corps des {@code PUT .../redact/...} reçus. */
+	List<String> redacts() {
+		return received(putRequestedFor(urlPathMatching(PREFIX + "rooms/.*/redact/.*"))).stream()
+				.map(request -> decode(request.getUrl()) + " " + request.getBodyAsString()).toList();
+	}
+
 	/** {@code POST /logout} réussit. */
 	FakeHomeserver logout() {
 		server.stubFor(post(urlPathEqualTo(PREFIX + "logout")).willReturn(okJson("{}")));

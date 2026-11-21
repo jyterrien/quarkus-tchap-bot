@@ -82,6 +82,18 @@ public class DefaultMessageService implements MessageService {
 				.thenApply(response -> new MessageReceipt(extractEventId(response)));
 	}
 
+	@Override
+	public CompletionStage<MessageReceipt> redact(String roomId, String eventId, String reason) {
+		requireText(eventId, "eventId");
+		String txnId = txnGenerator.next();
+		ObjectNode content = MAPPER.createObjectNode();
+		if (reason != null && !reason.isBlank()) {
+			content.put("reason", reason);
+		}
+		return api.redactEvent(roomId, eventId, txnId, content.toString())
+				.thenApply(response -> new MessageReceipt(extractEventId(response)));
+	}
+
 	/**
 	 * Contenu {@code m.room.message}. Ordre des champs : msgtype, body, format et
 	 * formatted_body, puis m.relates_to.

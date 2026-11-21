@@ -92,4 +92,14 @@ public class TchapClient {
 	public CompletionStage<MessageReceipt> react(String roomId, String eventId, String key) {
 		return matrixClient.messages().react(roomId, eventId, key);
 	}
+
+	/**
+	 * Supprime un événement : un message, ou une réaction pour la retirer (son
+	 * identifiant est le reçu rendu par {@link #react}). Le bot peut supprimer ses
+	 * propres événements ; ceux des autres demandent le droit de modération. Voir
+	 * {@link fr.gouv.tchap.matrix.message.MessageService#redact}.
+	 */
+	public CompletionStage<MessageReceipt> redact(String roomId, String eventId, String reason) {
+		return matrixClient.messages().redact(roomId, eventId, reason);
+	}
 }

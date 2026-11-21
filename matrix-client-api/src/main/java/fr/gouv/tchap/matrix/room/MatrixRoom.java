@@ -55,6 +55,15 @@ public interface MatrixRoom {
 	CompletionStage<MessageReceipt> react(String eventId, String key);
 
 	/**
+	 * Supprime un événement de ce salon : un message, ou une réaction pour la
+	 * retirer. Voir {@link fr.gouv.tchap.matrix.message.MessageService#redact}.
+	 *
+	 * @param reason
+	 *            motif visible des membres, {@code null} pour aucun
+	 */
+	CompletionStage<MessageReceipt> redact(String eventId, String reason);
+
+	/**
 	 * Téléverse un fichier puis l'envoie dans ce salon : image, audio, vidéo ou
 	 * fichier selon {@code contentType}. Voir
 	 * {@link fr.gouv.tchap.matrix.media.MediaService#prepareMessage}. Pour
